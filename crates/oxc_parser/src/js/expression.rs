@@ -8,6 +8,7 @@ use oxc_regular_expression::ast::Pattern;
 use oxc_span::{GetSpan, Span};
 use oxc_str::{Ident, Str};
 use oxc_syntax::{
+    node::NodeId,
     number::{BigintBase, NumberBase},
     precedence::Precedence,
 };
@@ -1721,25 +1722,9 @@ impl<'a, C: Config> ParserImpl<'a, C> {
             if self.is_yield_expression() {
                 return self.parse_yield_expression();
             }
-            'parse_lhs: {
+            {
                 // `() => {}`, `(x) => {}`, `async x => {}`
                 let arrow_expr = match kind {
-                    Kind::LParen if !self.is_ts && !self.ctx.has_decorator() => {
-                        let pure_comments =
-                            self.lexer.trivia_builder.previous_token_pure_comments();
-                        match self.try_parse_arrow_function_expression::<true>(
-                            allow_return_type_in_arrow_function,
-                        ) {
-                            Some(Expression::ParenthesizedExpression(parenthesized)) => {
-                                break 'parse_lhs self.parse_reused_parenthesized_expression_rest(
-                                    start,
-                                    parenthesized,
-                                    pure_comments,
-                                );
-                            }
-                            arrow => arrow,
-                        }
-                    }
                     Kind::LParen | Kind::LAngle | Kind::Async => self
                         .try_parse_arrow_function_expression::<false>(
                             allow_return_type_in_arrow_function,
@@ -1801,26 +1786,6 @@ impl<'a, C: Config> ParserImpl<'a, C> {
         }
 
         expr
-    }
-
-    #[inline(never)]
-    fn parse_reused_parenthesized_expression_rest(
-        &mut self,
-        start: u32,
-        parenthesized: ArenaBox<'a, ParenthesizedExpression<'a>>,
-        pure_comments: Option<(u32, NonZeroU32)>,
-    ) -> Expression<'a> {
-        let primary = if self.options.preserve_parens {
-            Expression::ParenthesizedExpression(parenthesized)
-        } else {
-            parenthesized.unbox().expression
-        };
-        let lhs = self.parse_primary_expression_rest(start, primary, pure_comments);
-        if kind_to_precedence(self.cur_kind()).is_none() {
-            lhs
-        } else {
-            self.parse_binary_expression_rest(start, lhs, true, Precedence::Comma)
-        }
     }
 
     #[cold]
