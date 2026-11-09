@@ -67,6 +67,7 @@ impl<'a, C: Config> ParserImpl<'a, C> {
             if let Some(this_param) = &this_param {
                 // type Foo = new (this: number) => any;
                 self.error(diagnostics::ts_constructor_this_parameter(this_param.span));
+                self.unassign_comments(this_param.span);
             }
             TSType::new_ts_constructor_type(
                 span,
@@ -1466,6 +1467,7 @@ impl<'a, C: Config> ParserImpl<'a, C> {
         {
             // interface Foo { new(this: number): Foo }
             self.error(diagnostics::ts_constructor_this_parameter(this_param.span));
+            self.unassign_comments(this_param.span);
         }
         let return_type = self.parse_ts_return_type_annotation();
         self.parse_type_member_semicolon();
