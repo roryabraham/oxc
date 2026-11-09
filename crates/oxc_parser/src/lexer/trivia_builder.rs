@@ -111,6 +111,13 @@ impl<'a> TriviaBuilder<'a> {
         self.irregular_whitespaces.push(Span::new(start, end));
     }
 
+    #[expect(clippy::cast_possible_truncation, reason = "Comment counts fit within u32")]
+    pub(super) fn start_comments(&mut self, on_new_line: bool) {
+        self.token_comments_start = self.comments.len() as u32;
+        self.saw_newline = on_new_line;
+        self.saw_newline_for_comment = on_new_line;
+    }
+
     pub fn add_line_comment(&mut self, start: u32, end: u32, kind: CommentKind, source_text: &str) {
         self.add_comment(Comment::new(start, end, kind), source_text);
     }
@@ -150,19 +157,19 @@ impl<'a> TriviaBuilder<'a> {
 
     #[inline]
     pub fn handle_token(&mut self, token: Token) {
-        self.saw_newline = false;
-        self.saw_newline_for_comment = false;
-        // Cold path: attach any unprocessed comments between the previous token and this one.
-        // For files with no comments (or once all comments are consumed), this branch is skipped.
-        let len = self.comments.len();
-        if self.processed < len {
-            self.attach_pending_comments_to_token(token, len);
+        if token.follows_comment() {
+            self.attach_pending_comments_to_token(token);
         }
+        debug_assert_eq!(self.processed, self.comments.len());
         self.previous_token = token;
     }
 
     #[cold]
-    fn attach_pending_comments_to_token(&mut self, token: Token, len: usize) {
+    fn attach_pending_comments_to_token(&mut self, token: Token) {
+        let len = self.comments.len();
+        if self.processed == len {
+            return;
+        }
         let previous_kind = self.previous_token.kind();
         let can_attach_to_previous = previous_kind != Kind::Undetermined
             && (token.kind() == Kind::Eof

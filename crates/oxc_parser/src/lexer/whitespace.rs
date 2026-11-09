@@ -27,9 +27,16 @@ impl<C: Config> Lexer<'_, C> {
         Kind::Skip
     }
 
-    pub(super) fn line_break_handler(&mut self) -> Kind {
+    #[inline]
+    pub(super) fn handle_line_break(&mut self) {
         self.token.set_is_on_new_line(true);
-        self.trivia_builder.handle_newline();
+        if self.token.follows_comment() {
+            self.trivia_builder.handle_newline();
+        }
+    }
+
+    pub(super) fn line_break_handler(&mut self) -> Kind {
+        self.handle_line_break();
 
         // Indentation is common after a line break.
         // Consume it, along with any further line breaks.

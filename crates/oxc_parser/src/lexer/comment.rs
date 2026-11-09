@@ -28,10 +28,8 @@ impl<'a, C: Config> Lexer<'a, C> {
     #[inline]
     fn set_follows_comment(&mut self) {
         if !self.token.follows_comment() {
+            self.trivia_builder.start_comments(self.token.is_on_new_line());
             self.token.set_follows_comment(true);
-            #[expect(clippy::cast_possible_truncation, reason = "Comment counts fit within u32")]
-            let len = self.trivia_builder.comments.len() as u32;
-            self.trivia_builder.token_comments_start = len;
         }
     }
 
