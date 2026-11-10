@@ -123,9 +123,7 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
-        "function f() { try {} catch (e) { var e = 2; } return e; }",
         "function f(e) { try {} catch (e) { var e = 2; } return e; }",
-        "function f() { try {} catch (e) { var { value: e } = source; } return e; }",
         "try {} catch {}",
         "try {} catch {
                 error

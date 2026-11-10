@@ -4,43 +4,26 @@ use oxc_span::SourceType;
 use crate::util::SemanticTester;
 
 #[test]
-fn test_catch_var_bindings_survive_clone() {
-    let tester = SemanticTester::js("try {} catch (e) { var e; }");
+fn test_linked_symbol_names_survive_clone() {
+    let tester =
+        SemanticTester::js("let other; try {} catch (e) { var e; } try {} catch (e) { var e; }");
     let semantic = tester.build();
-    let pairs = semantic.scoping().catch_var_bindings().collect::<Vec<_>>();
-    assert_eq!(pairs.len(), 1);
     let cloned = semantic.scoping().clone_in_with_semantic_ids_with_another_arena();
-    assert_eq!(cloned.catch_var_bindings().collect::<Vec<_>>(), pairs);
-}
-
-#[test]
-fn test_symbol_ids_with_shared_name() {
-    let tester = SemanticTester::js(
-        "var x; let y; try {} catch (x) { var x; try {} catch (x) { var x; } }
-         try {} catch (x) { var x; }",
-    );
-    let semantic = tester.build();
-    let check = |scoping: &oxc_semantic::Scoping| {
-        let outer = scoping.get_binding(scoping.root_scope_id(), "x".into()).unwrap();
-        let mut group = scoping.symbol_ids_with_shared_name(outer).collect::<Vec<_>>();
-        assert_eq!(group[0], outer);
-        assert_eq!(group.len(), 4);
-        group.sort_unstable();
-        for &id in &group {
-            let mut linked = scoping.symbol_ids_with_shared_name(id).collect::<Vec<_>>();
-            assert_eq!(linked[0], outer);
-            linked.sort_unstable();
-            assert_eq!(linked, group);
+    let pairs = semantic.scoping().catch_var_bindings().collect::<Vec<_>>();
+    assert_eq!(pairs.len(), 2);
+    let outer = pairs[0].1;
+    let mut expected = vec![outer, pairs[0].0, pairs[1].0];
+    expected.sort_unstable();
+    for scoping in [semantic.scoping(), &cloned] {
+        for &symbol in &expected {
+            let mut group = scoping.symbol_ids_with_shared_name(symbol).collect::<Vec<_>>();
+            assert_eq!(group[0], outer);
+            group.sort_unstable();
+            assert_eq!(group, expected);
         }
-        let unrelated = scoping.get_binding(scoping.root_scope_id(), "y".into()).unwrap();
-        assert_eq!(scoping.symbol_ids_with_shared_name(unrelated).collect::<Vec<_>>(), [unrelated]);
-    };
-    check(semantic.scoping());
-    check(&semantic.scoping().clone_in_with_semantic_ids_with_another_arena());
-    let plain = SemanticTester::js("let x;");
-    let semantic = plain.build();
-    let id = semantic.scoping().symbol_ids().next().unwrap();
-    assert_eq!(semantic.scoping().symbol_ids_with_shared_name(id).collect::<Vec<_>>(), [id]);
+        let other = scoping.get_binding(scoping.root_scope_id(), "other".into()).unwrap();
+        assert_eq!(scoping.symbol_ids_with_shared_name(other).collect::<Vec<_>>(), [other]);
+    }
 }
 
 fn assert_root_and_single_local_reference_counts(

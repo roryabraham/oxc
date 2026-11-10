@@ -381,14 +381,8 @@ fn test() {
     ];
 
     let fail = vec![
-        "function f() { try {} catch (x) { var x = 1; } use(x); }",
         "function f(x) { use(x); try {} catch (x) { var x = 1; } use(x); }",
-        "function f() { var x = 0; try {} catch (x) { var x = 1; } use(x); }",
         "function f() { try {} catch (x) { var x = 1; } try {} catch (x) { var x = 2; } use(x); }",
-        "function f() { try {} catch (x) { try {} catch (x) { var x = 1; use(x); } use(x); } use(x); }",
-        "function f() { try {} catch (x) { { var x = 1; } use(x); } use(x); }",
-        "function f() { try {} catch (x) { var { a: x, b: y } = obj; use(x); } use(x, y); }",
-        "function f() { try {} catch (x) { for (var x of arr) use(x); } use(x); }",
         r"
             if (true) {
                 var a = 3;

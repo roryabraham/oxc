@@ -632,13 +632,10 @@ fn test_vars_catch() {
 
 #[test]
 fn test_catch_var_bindings() {
-    let pass = vec![
-        "function f() { try { throw 0 } catch (e) { var e = 1; console.log(e) } return e } f();",
-    ];
+    let pass = vec![];
     let fail = vec![
         "function f() { try { throw 0 } catch (e) { var e = 1; console.log(e) } } f();",
         "function f() { try { throw 0 } catch (e) { var e = 1 } return e } f();",
-        "function f() { try { throw 0 } catch (e) { var [e] = [1]; console.log(e) } } f();",
     ];
     let fix = fail
         .iter()

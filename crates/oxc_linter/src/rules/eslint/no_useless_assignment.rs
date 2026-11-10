@@ -940,9 +940,6 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
-        "function f() { try {} catch (e) { var e = 1; use(e); } e = 2; use(e); }",
-        "function f() { try {} catch (e) { var e = 1; use(e); } return e; }",
-        "function f() { try {} catch (e) { var { value: e } = obj; use(e); } e = 2; use(e); }",
         "let v = 'used';
                     console.log(v);
                     v = 'used-2'

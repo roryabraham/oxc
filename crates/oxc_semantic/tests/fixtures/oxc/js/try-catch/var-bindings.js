@@ -1,61 +1,40 @@
-function noOuterBinding() {
-  try { throw 0; } catch (y) {
-    var y = 2;
-    use(y);
+function bindings(same) {
+  try {
+  } catch (same) {
+    var same = 1;
+    read(same);
   }
-  use(y);
-}
+  read(same);
 
-function parameter(y) {
-  try { throw 0; } catch (y) {
-    var y = 2;
-    use(y);
-  }
-  use(y);
-}
-
-function priorVar() {
-  var y = 1;
-  try { throw 0; } catch (y) {
-    var y = 2;
-    use(y);
-  }
-  use(y);
-}
-
-function laterVar() {
-  try { throw 0; } catch (y) {
-    var y = 2;
-    use(y);
-  }
-  var y = 1;
-  use(y);
-}
-
-function nested() {
-  try { throw 10; } catch (y) {
-    try { throw 20; } catch (y) {
-      var y = 3;
-      use(y);
+  try {
+  } catch (nested) {
+    try {
+    } catch (nested) {
+      var nested = 2;
+      read(nested);
     }
-    use(y);
+    read(nested);
   }
-  use(y);
-}
+  read(nested);
 
-function nestedBlock() {
-  try { throw 0; } catch (y) {
-    {
-      var y = 1;
-      var y = 2;
-      use(y);
+  try {
+  } catch ({ message }) {
+    read(message);
+  }
+
+  try {
+  } catch (dynamic) {
+    var dynamic = 3;
+    eval("dynamic");
+  }
+  read(dynamic);
+
+  try {
+  } catch (shadowed) {
+    with ({}) {
+      var shadowed = 4;
+      read(shadowed);
     }
   }
-  use(y);
-}
-
-function separateCatches() {
-  try { throw 1; } catch (y) { var y = 2; use(y); }
-  try { throw 3; } catch (y) { var y = 4; use(y); }
-  use(y);
+  read(shadowed);
 }

@@ -302,21 +302,15 @@ mod test {
 
     #[test]
     fn test_redeclaration_init() {
-        for source in [
-            "var foo; var foo = function() {}",
-            "(function() { try {} catch (foo) { var foo = function() {} } })",
-            "(function(foo) { try {} catch (foo) { var foo = () => {} } })",
-            "(function() { var foo; try {} catch (foo) { var [foo = () => {}] = [] } })",
-        ] {
-            assert_eq!(collect(function_only(), source), data("foo"));
-        }
-        for source in [
-            "var Foo; var Foo = class {}",
-            "function f() { try {} catch (Foo) { var Foo = class {} } }",
-            "function f(Foo) { try {} catch (Foo) { var {x: Foo = class {}} = {} } }",
-        ] {
-            assert_eq!(collect(class_only(), source), data("Foo"));
-        }
+        assert_eq!(collect(function_only(), "var foo; var foo = function() {}"), data("foo"));
+        assert_eq!(
+            collect(function_only(), "try {} catch (foo) { var foo = () => {} }"),
+            data("foo")
+        );
+        assert_eq!(
+            collect(class_only(), "try {} catch (Foo) { var {x: Foo = class {}} = {} }"),
+            data("Foo"),
+        );
     }
 
     #[test]

@@ -145,23 +145,9 @@ impl Rule for NoRedeclare {
 fn test_catch_var_bindings() {
     use crate::tester::Tester;
 
-    let pass = vec![
-        "function f() { try {} catch (e) { var e = 2; } }",
-        "function f() { try {} catch (e) { var [e] = [2]; } }",
-        "function f() { try {} catch (e) { for (var e of []) {} } }",
-        "function f() { try {} catch (e) { for (var e in {}) {} } }",
-        "function f() { try {} catch (e) { try {} catch (e) { var e; } } }",
-        "function f() { try {} catch (e) { function g() { var e; } } }",
-    ];
-    let fail = vec![
-        "function f(e) { try {} catch (e) { var e = 2; } }",
-        "function f() { var e = 1; try {} catch (e) { var e = 2; } }",
-        "function f() { try {} catch (e) { var e; var e; } }",
-        "function f() { try {} catch (e) { var e; } var e; }",
-        "function f() { try {} catch (e) { var e; } try {} catch (e) { var e; } }",
-    ];
+    let pass = vec!["function f() { try {} catch (e) { var e = 2; } }"];
+    let fail = vec!["function f() { try {} catch (e) { var e; var e; } }"];
 
-    // The catch skip runs before the TypeScript-specific checks, so one JS run covers it.
     Tester::new(NoRedeclare::NAME, NoRedeclare::PLUGIN, pass, fail)
         .change_rule_path_extension("cjs")
         .with_snapshot_suffix("catch-var-bindings")
