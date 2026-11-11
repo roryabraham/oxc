@@ -221,9 +221,24 @@ only declared pure callbacks are invoked for value checks. Event handlers are
 invoked deliberately through `act`, not while serializing output.
 
 The optimization oracle checks expected dependency-local reuse and **B reuses a
-particular site ⇒ S also reuses that site** on each transition. It also groups
-permutation identity vectors by family. Aggregate cache slots, guard counts, or
-total reuse cannot conceal a per-site regression.
+particular site ⇒ S also reuses that site** on each semantically clean transition.
+Both endpoints and both compared variants must pass their value/runtime checks;
+reuse of a wrong cached value is not a quality reference. Each sample records
+`semanticallyClean`. Independent-reuse goals use the same gating. The report also
+groups permutation identity vectors by family. Aggregate cache slots, guard
+counts, or total reuse cannot conceal a per-site regression on clean samples.
+Cache-access counts are telemetry; committed behavior and identity are the
+optimization oracle, with a function-specific activation/cache canary.
+
+The four explicit pure-accessor fixtures (`getter`, `proxy`,
+`unnamed-getter-order`, `typecast-getter-order`) return deterministic snapshot
+values. For B/S only, their event oracle collapses **consecutive identical**
+`get:left` or `get:right` reads: `LLLRRR` satisfies `LR`, while `RRRLLL` and `LRL`
+do not. Predicate/store rereads remain visible in raw `externalEvents` and
+`externalEventCounts` telemetry. U/M0/M1 require exact count and order. Throwing
+getters, unknown calls, coercions, iterators, other property events, and every
+unmarked fixture retain exact event checks. First-throw events and errors are
+always checked independently.
 
 Effects depending on computed objects may run fewer redundant setups in an
 optimized variant. Expected setup/cleanup events use that variant's observed
@@ -264,6 +279,21 @@ optimization misses. Shared wrong output fields remain baseline findings even
 when S introduces an additional wrong field. Finding counts count mismatch
 details, **not failing cases**; `failingCases` lists the unique affected cases.
 
+An explicitly declared baseline defect can be classified
+`expected-baseline-defect`. Every declaration specifies an exact case ID,
+check, step, output path, wrong value, and expected value. It must occur exactly
+once in B; disappearance, a changed mismatch, or duplicate occurrences fail
+verification and require rebaselining. The raw B assertion is retained. This
+mechanism cannot waive U/S/M0/M1 failures, including S exhibiting the same defect.
+Undeclared baseline failures fail even if S fixes them. Inventory totals are
+reported under `expectedBaselineDefects`.
+
+The only declared inventory is B's `control/special-primitives` signed-zero
+defect: `holes[1]` and the exact host text at `positive-zero`, plus that same
+retained output's `holes[1]` at `NaN`, `NaN-stable`, and `undefined`. All five
+specific mismatches must be observed. No other case, path, step, or variant is
+exempted, and the complete source/S/M0/M1 value assertions remain active.
+
 Literal array/object families have required independent-reuse goals. Optional
 families still run semantic checks and report misses: e.g. multiple writes
 straddling a hook or opaque factory calls may remain unsupported. Use
@@ -272,12 +302,14 @@ no-cache/opt-out functions and diagnostic-driven fallbacks are reported;
 eligibility is never inferred from a module-wide runtime import.
 
 Exit codes: `0` passed (or explicitly source-only validated), `1` findings other
-than optional optimization misses, `2` blocked canary, `3` infrastructure failure
+than optional optimization misses and matched expected baseline defects,
+`2` blocked canary, `3` infrastructure failure
 or incomplete execution. `schedulerEvidence: true` means the feature canary is
 proven on a consistent binary; it does **not** mean all cases passed.
 
-Workers are isolated child processes with a hard per-case timeout (30 seconds)
-and a whole-run timeout (15 minutes). A native hang can be killed by the parent.
+Workers are isolated child processes with a hard **whole-case** timeout (30
+seconds across all variants and lifecycle steps of one `runTask`, not 30 seconds
+per variant) and a whole-run timeout (15 minutes). A native hang can be killed by the parent.
 Progress checkpoints retain available output and counts on failure. If a worker
 dies, counts are marked incomplete/lower-bound rather than presented as exact.
 
@@ -286,13 +318,11 @@ dies, counts are marked incomplete/lower-bound rather than presented as exact.
 - The commuting families contain fresh, independent local constructions. Aliases,
   shared state, unknown calls, and other negative controls are not claimed to be
   permutation-equivalent.
-- Getter/proxy/coercion/iterator event controls intentionally examine stronger
-  JavaScript observability than React's render-purity assumptions. Their event
-  counts can expose scheduler-enabled memoization differences without a changed
-  ordinary data value. M0/M1 make this distinction visible. They remain reported
-  failures, rather than being silently waived. Accesses from React's development
-  prop inspection are excluded; accesses during the actual generated component
-  invocation are logged.
+- Pure getter/proxy counts measure compiler reevaluation, while their order and
+  values are checked under the narrow policy above. Unknown calls, throwing
+  getters, coercions, and iterators retain strict execution oracles. Accesses from
+  React's development prop inspection are excluded; accesses during the actual
+  generated component invocation are logged.
 - A signed-zero failure may originate in existing compiler cache equality and
   become visible at additional newly cached sites. This is reported by output
   field and variant, not automatically attributed to instruction movement.

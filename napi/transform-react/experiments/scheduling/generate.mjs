@@ -411,6 +411,7 @@ function control(name, seed) {
         expectedEvents: throwing
           ? ["get:left"]
           : [`${calls ? "call" : "get"}:left`, `${calls ? "call" : "get"}:right`],
+        accessEventPolicy: !calls && !throwing ? "pure-accessor-reads" : undefined,
         eventsPerAttempt: true,
         errorBoundary: throwing,
         fields: [],
@@ -486,8 +487,9 @@ function control(name, seed) {
         expected: arrays,
         external: name,
         expectedEvents: ["get:left", "get:right"],
+        accessEventPolicy: "pure-accessor-reads",
         assumption:
-          "Adversarial accessor event counts; compiler purity assumptions may already differ from JavaScript.",
+          "Accessors return deterministic snapshot values. Memoized variants preserve demanded read order; duplicate predicate/store reads are telemetry. Source and no-memo variants preserve exact reads.",
       };
     case "computed-key-coercion":
       return {
@@ -636,6 +638,41 @@ function control(name, seed) {
           holes[1] = inputA;
           return { a: [inputA], b: { value: inputB }, holes };
         },
+        expectedBaselineDefects: [
+          ...[
+            ["returned-values", "positive-zero"],
+            ["retained-output:positive-zero", "NaN"],
+            ["retained-output:positive-zero", "NaN-stable"],
+            ["retained-output:positive-zero", "undefined"],
+          ].map(([check, step]) => ({
+            id: `signed-zero:${check}:${step}`,
+            caseId: "control/special-primitives",
+            kind: "semantic",
+            check,
+            step,
+            path: "$.holes.1",
+            actual: { $type: "negative-zero" },
+            expected: 0,
+          })),
+          {
+            id: "signed-zero:rendered-positive-zero",
+            caseId: "control/special-primitives",
+            kind: "semantic",
+            check: "rendered-host-tree",
+            step: "positive-zero",
+            path: "$.children.0",
+            actual: JSON.stringify({
+              a: [0],
+              b: { value: { $type: "undefined" } },
+              holes: [{ $type: "hole" }, { $type: "negative-zero" }],
+            }),
+            expected: JSON.stringify({
+              a: [0],
+              b: { value: { $type: "undefined" } },
+              holes: [{ $type: "hole" }, 0],
+            }),
+          },
+        ],
       };
     case "dependent-effect":
       return {

@@ -11,7 +11,7 @@ import {
   generateSuite,
   LIFECYCLE_NAMES,
 } from "./generate.mjs";
-import { assessCanary, errorRecord } from "./oracles.mjs";
+import { assessCanary, errorRecord, isInformationalFinding } from "./oracles.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const digest = (value) => createHash("sha256").update(value).digest("hex");
@@ -30,7 +30,7 @@ function help() {
   --three-region-limit INTEGER  Selected schedules per three-region family (default 256)
   --lifecycle LIST              Optional state,strict,remount,suspense or all
   --jobs INTEGER                Isolated worker processes (default 2, maximum 16)
-  --timeout-ms INTEGER          Hard per-case process timeout (default 30000)
+  --timeout-ms INTEGER          Hard whole-case timeout, all variants/lifecycle (default 30000)
   --run-timeout-ms INTEGER      Hard whole-run timeout (default 900000)
   --filter TEXT                 Select task IDs containing TEXT
   --case ID                     Select an exact task ID (repeatable)
@@ -367,13 +367,9 @@ function summarize(results, options, suite, canary, metadata, started, stopped) 
       }));
     }
   }
-  const informational = new Set([
-    "optional-optimization-miss",
-    "baseline-failure-not-reproduced-enabled",
-    "baseline-no-memo-failure-not-reproduced-enabled",
-  ]);
-  if (options.requireOptionalGoals) informational.delete("optional-optimization-miss");
-  const hardFindings = Object.entries(findings).filter(([name]) => !informational.has(name));
+  const hardFindings = Object.entries(findings).filter(
+    ([name]) => !isInformationalFinding(name, options.requireOptionalGoals),
+  );
   let status = options.sourceOnly ? "source-validated-only" : "passed";
   let exitCode = 0;
   if (hardFindings.length) {
@@ -429,6 +425,19 @@ function summarize(results, options, suite, canary, metadata, started, stopped) 
       byVariant,
     },
     findings,
+    expectedBaselineDefects: {
+      declared: results.reduce(
+        (sum, result) => sum + (result.expectedBaselineDefects?.length ?? 0),
+        0,
+      ),
+      checked: results.reduce(
+        (sum, result) =>
+          sum + (result.variants.disabled ? (result.expectedBaselineDefects?.length ?? 0) : 0),
+        0,
+      ),
+      observed: findings["expected-baseline-defect"] ?? 0,
+      mismatches: findings["expected-baseline-defect-mismatch"] ?? 0,
+    },
     diagnosticCounts,
     acceptedNoCacheFunctions,
     families,

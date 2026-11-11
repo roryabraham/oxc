@@ -18,14 +18,17 @@ import {
   topologicalSchedules,
 } from "./generate.mjs";
 import {
+  accessEventSequence,
   analyzeCode,
   assessCanary,
   assessVariants,
   equal,
   failure,
   goalFailures,
+  isInformationalFinding,
   lowerObserverJSX,
   parseSource,
+  sampleSemanticallyClean,
   snapshot,
 } from "./oracles.mjs";
 
@@ -174,6 +177,55 @@ verify("semantic serialization distinguishes zero sign, NaN, undefined, holes, a
 });
 
 verify(
+  "pure accessor telemetry accepts only consecutive duplicate reads in memoized variants",
+  () => {
+    const expected = ["get:left", "get:right"];
+    const repeated = ["get:left", "get:left", "get:left", "get:right", "get:right", "get:right"];
+    const reversed = ["get:right", "get:right", "get:right", "get:left", "get:left", "get:left"];
+    const original = [...repeated];
+    for (const variant of ["disabled", "enabled"]) {
+      assert.deepEqual(accessEventSequence(expected, variant, "pure-accessor-reads"), expected);
+      assert.deepEqual(accessEventSequence(repeated, variant, "pure-accessor-reads"), expected);
+      assert.notDeepEqual(accessEventSequence(reversed, variant, "pure-accessor-reads"), expected);
+      assert.notDeepEqual(
+        accessEventSequence(["get:left", "get:right", "get:left"], variant, "pure-accessor-reads"),
+        expected,
+      );
+      assert.deepEqual(accessEventSequence(repeated, variant, undefined), repeated);
+    }
+    for (const variant of ["source", "noMemoDisabled", "noMemoEnabled"]) {
+      assert.deepEqual(accessEventSequence(expected, variant, "pure-accessor-reads"), expected);
+      assert.deepEqual(accessEventSequence(repeated, variant, "pure-accessor-reads"), repeated);
+      assert.notDeepEqual(accessEventSequence(repeated, variant, "pure-accessor-reads"), expected);
+    }
+    assert.deepEqual(repeated, original, "Raw measurements must remain untouched");
+  },
+);
+
+verify(
+  "accessor coalescing cannot normalize unknown calls, coercions, iterators, or other properties",
+  () => {
+    for (const event of ["call:left", "key:left", "iterate:left", "get:other"]) {
+      const events = [event, event, "get:right"];
+      assert.deepEqual(accessEventSequence(events, "enabled", "pure-accessor-reads"), events);
+    }
+    const names = generateSuite()
+      .tasks.filter((task) => buildCase(task).accessEventPolicy === "pure-accessor-reads")
+      .map(({ name }) => name)
+      .sort();
+    assert.deepEqual(names, ["getter", "proxy", "typecast-getter-order", "unnamed-getter-order"]);
+    const throwing = buildCase({ kind: "control", name: "throwing-getter-order", seed: 1 });
+    assert.equal(throwing.accessEventPolicy, undefined);
+    assert.deepEqual(throwing.expectedEvents, ["get:left"]);
+    assert.equal(throwing.updates[0].error, "left-error");
+    assert.deepEqual(
+      accessEventSequence(["get:left", "get:left"], "enabled", throwing.accessEventPolicy),
+      ["get:left", "get:left"],
+    );
+  },
+);
+
+verify(
   "independent semantic expectations encode selected roots rather than executing source",
   () => {
     const spec = buildCase(canaryTask(5));
@@ -252,6 +304,197 @@ verify("baseline semantic failures remain separate from new failing output field
     ),
   );
 });
+
+verify("reuse and optimization goals require clean samples at both transition endpoints", () => {
+  const samples = [
+    { label: "mount", committed: true, input: { inputA: 1 }, same: { a: null } },
+    { label: "stable", committed: true, input: { inputA: 1 }, same: { a: false } },
+  ];
+  const baselineSamples = samples.map((sample, index) => ({ ...sample, same: { a: index > 0 } }));
+  const spec = { goal: { required: true, dependencies: { a: ["inputA"] } } };
+  const hasReuseRegression = (disabled, enabled) =>
+    assessVariants({ source: emptyVariant(), disabled, enabled }, {}).some(
+      ({ classification }) => classification === "optimization-regression",
+    );
+  const baseline = { ...emptyVariant(), samples: baselineSamples };
+  const scheduled = { ...emptyVariant(), samples };
+  assert(hasReuseRegression(baseline, scheduled));
+  assert.equal(goalFailures(spec, samples).length, 1);
+  for (const step of ["mount", "stable"]) {
+    const failures = [failure("returned-values", -0, 0, step)];
+    assert(!hasReuseRegression({ ...baseline, failures }, scheduled));
+    assert(!hasReuseRegression(baseline, { ...scheduled, failures }));
+    assert.equal(goalFailures(spec, samples, failures).length, 0);
+    assert(
+      !sampleSemanticallyClean(
+        samples.find(({ label }) => label === step),
+        failures,
+      ),
+    );
+  }
+  assert.equal(goalFailures(spec, samples, [failure("other-step", 1, 2, "unrelated")]).length, 1);
+  assert.equal(
+    goalFailures(spec, samples, [failure("react-warning", true, false, null, "runtime")]).length,
+    0,
+  );
+  assert.equal(
+    goalFailures(
+      spec,
+      samples.map((sample) => ({ ...sample, semanticallyClean: false })),
+    ).length,
+    0,
+  );
+});
+
+verify(
+  "expected baseline defects match exact cases, steps, paths, and values and must occur",
+  () => {
+    const taskId = "control/special-primitives";
+    const defect = {
+      id: "signed-zero-positive-zero",
+      caseId: taskId,
+      kind: "semantic",
+      check: "returned-values",
+      step: "positive-zero",
+      path: "$.holes.1",
+      actual: { $type: "negative-zero" },
+      expected: 0,
+    };
+    const spec = { expectedBaselineDefects: [defect] };
+    const rawFailure = failure(
+      "returned-values",
+      { holes: [1, -0] },
+      { holes: [1, 0] },
+      "positive-zero",
+    );
+    const variants = {
+      source: emptyVariant(),
+      disabled: { ...emptyVariant(), failures: [rawFailure] },
+      enabled: emptyVariant(),
+    };
+    const expected = assessVariants(variants, spec, taskId);
+    assert.deepEqual(
+      expected.map(({ classification }) => classification),
+      ["expected-baseline-defect"],
+    );
+    assert(expected.every(({ classification }) => isInformationalFinding(classification)));
+    for (const [changedSpec, changedTask] of [
+      [{ expectedBaselineDefects: [{ ...defect, step: "negative-zero" }] }, taskId],
+      [{ expectedBaselineDefects: [{ ...defect, path: "$.a.0" }] }, taskId],
+      [{ expectedBaselineDefects: [{ ...defect, actual: 7 }] }, taskId],
+      [{ expectedBaselineDefects: [{ ...defect, expected: 7 }] }, taskId],
+      [spec, "control/another-case"],
+    ]) {
+      const findings = assessVariants(variants, changedSpec, changedTask);
+      assert(
+        findings.some(
+          ({ classification }) => classification === "expected-baseline-defect-mismatch",
+        ),
+      );
+      assert(!findings.some(({ classification }) => classification === "expected-baseline-defect"));
+    }
+    const missing = assessVariants({ ...variants, disabled: emptyVariant() }, spec, taskId);
+    assert(
+      missing.some(({ classification }) => classification === "expected-baseline-defect-mismatch"),
+    );
+    const duplicates = assessVariants(
+      { ...variants, disabled: { ...emptyVariant(), failures: [rawFailure, rawFailure] } },
+      spec,
+      taskId,
+    );
+    assert(
+      duplicates.some(
+        ({ classification }) => classification === "expected-baseline-defect-mismatch",
+      ),
+    );
+    const extra = assessVariants(
+      {
+        ...variants,
+        disabled: {
+          ...emptyVariant(),
+          failures: [rawFailure, failure("returned-values", { a: 9 }, { a: 1 }, "positive-zero")],
+        },
+      },
+      spec,
+      taskId,
+    );
+    assert(
+      extra.some(
+        ({ classification }) => classification === "baseline-failure-not-reproduced-enabled",
+      ),
+    );
+    assert(!isInformationalFinding("baseline-failure-not-reproduced-enabled"));
+    assert(!isInformationalFinding("baseline-no-memo-failure-not-reproduced-enabled"));
+  },
+);
+
+verify("baseline expectations cannot waive source, enabled, or no-memo value failures", () => {
+  const taskId = "control/special-primitives";
+  const spec = {
+    expectedBaselineDefects: [
+      {
+        id: "signed-zero",
+        caseId: taskId,
+        kind: "semantic",
+        check: "returned-values",
+        step: "positive-zero",
+        path: "$.holes.1",
+        actual: { $type: "negative-zero" },
+        expected: 0,
+      },
+    ],
+  };
+  const defect = failure("returned-values", { holes: [1, -0] }, { holes: [1, 0] }, "positive-zero");
+  const wrong = { ...emptyVariant(), failures: [defect] };
+  const variants = { source: emptyVariant(), disabled: wrong, enabled: emptyVariant() };
+  for (const [name, classification] of [
+    ["source", "source-or-oracle-failure"],
+    ["enabled", "enabled-regression"],
+    ["noMemoDisabled", "baseline-no-memo-failure-not-reproduced-enabled"],
+    ["noMemoEnabled", "scheduler-only-regression"],
+  ]) {
+    const findings = assessVariants(
+      { ...variants, noMemoDisabled: emptyVariant(), noMemoEnabled: emptyVariant(), [name]: wrong },
+      spec,
+      taskId,
+    );
+    assert(
+      findings.some((finding) => finding.classification === classification),
+      name,
+    );
+    assert(!isInformationalFinding(classification));
+  }
+});
+
+verify(
+  "the declared baseline inventory covers only the signed-zero value and its retained consequences",
+  () => {
+    const cases = generateSuite().tasks.filter(
+      (task) => buildCase(task).expectedBaselineDefects?.length,
+    );
+    assert.deepEqual(
+      cases.map(({ id }) => id),
+      ["control/special-primitives"],
+    );
+    const defects = buildCase(cases[0]).expectedBaselineDefects;
+    assert.equal(new Set(defects.map(({ id }) => id)).size, 5);
+    assert(
+      defects.every(
+        ({ caseId, kind }) => caseId === "control/special-primitives" && kind === "semantic",
+      ),
+    );
+    assert.deepEqual(
+      defects.map(({ check, step, path }) => [check, step, path]),
+      [
+        ["returned-values", "positive-zero", "$.holes.1"],
+        ["retained-output:positive-zero", "NaN", "$.holes.1"],
+        ["retained-output:positive-zero", "NaN-stable", "$.holes.1"],
+        ["retained-output:positive-zero", "undefined", "$.holes.1"],
+        ["rendered-host-tree", "positive-zero", "$.children.0"],
+      ],
+    );
+  },
+);
 
 verify("diagnostic loss and function cache loss are independent coverage failures", () => {
   const source = emptyVariant();

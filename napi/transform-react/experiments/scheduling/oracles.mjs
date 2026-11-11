@@ -77,6 +77,21 @@ export function equal(actual, expected) {
   return isDeepStrictEqual(snapshot(actual), snapshot(expected));
 }
 
+export function accessEventSequence(events, variant, policy) {
+  const coalesce = policy === "pure-accessor-reads" && ["disabled", "enabled"].includes(variant);
+  return events.filter(
+    (event, index) =>
+      !coalesce || !["get:left", "get:right"].includes(event) || event !== events[index - 1],
+  );
+}
+
+export function isInformationalFinding(classification, requireOptionalGoals = false) {
+  return (
+    classification === "expected-baseline-defect" ||
+    (!requireOptionalGoals && classification === "optional-optimization-miss")
+  );
+}
+
 export function failure(check, actual, expected, step = null, kind = "semantic") {
   const normalizedActual = snapshot(actual);
   const normalizedExpected = snapshot(expected);
@@ -247,13 +262,30 @@ export function identityObservations(current, previous, fields) {
   );
 }
 
-export function goalFailures(spec, samples) {
+export function sampleSemanticallyClean(sample, failures = []) {
+  return Boolean(
+    sample?.committed &&
+    sample.semanticallyClean !== false &&
+    !failures.some(
+      (issue) =>
+        ["semantic", "runtime", "compile"].includes(issue.kind) &&
+        (issue.step == null || issue.step === sample.label),
+    ),
+  );
+}
+
+export function goalFailures(spec, samples, observedFailures = []) {
   if (!spec.goal) return [];
   const failures = [];
   for (let index = 1; index < samples.length; index++) {
     const current = samples[index];
     const previous = samples[index - 1];
-    if (!current.committed || !previous.committed || current.reset) continue;
+    if (
+      !sampleSemanticallyClean(current, observedFailures) ||
+      !sampleSemanticallyClean(previous, observedFailures) ||
+      current.reset
+    )
+      continue;
     const expected = Object.fromEntries(
       Object.entries(spec.goal.dependencies).map(([field, names]) => [
         field,
@@ -275,7 +307,7 @@ export function goalFailures(spec, samples) {
   return failures;
 }
 
-export function assessVariants(variants, spec) {
+export function assessVariants(variants, spec, taskId) {
   const source = variants.source;
   const disabled = variants.disabled;
   const enabled = variants.enabled;
@@ -297,10 +329,43 @@ export function assessVariants(variants, spec) {
   const location = (issue) => JSON.stringify([issue.kind, issue.check, issue.step, issue.path]);
   const disabledFailures = atomicFailures(disabled.failures);
   const enabledFailures = atomicFailures(enabled.failures);
-  const disabledKeys = new Set(disabledFailures.map(key));
+  const expectedBaseline = new Map();
+  for (const defect of spec.expectedBaselineDefects ?? []) {
+    const occurrences =
+      defect.caseId === taskId
+        ? disabledFailures.filter((issue) => key(issue) === key(defect)).length
+        : 0;
+    if (occurrences === 1) expectedBaseline.set(key(defect), defect);
+    else {
+      findings.push({
+        ...failure(
+          `baseline-defect-occurrence:${defect.id}`,
+          occurrences,
+          1,
+          defect.step,
+          "coverage",
+        ),
+        classification: "expected-baseline-defect-mismatch",
+        defect,
+      });
+    }
+  }
+  const disabledKeys = new Set(
+    disabledFailures.filter((issue) => !expectedBaseline.has(key(issue))).map(key),
+  );
   const enabledKeys = new Set(enabledFailures.map(key));
   const enabledLocations = new Set(enabledFailures.map(location));
   for (const issue of disabledFailures) {
+    const defect = expectedBaseline.get(key(issue));
+    if (defect) {
+      findings.push({
+        ...issue,
+        classification: "expected-baseline-defect",
+        variant: "disabled",
+        defectId: defect.id,
+      });
+      continue;
+    }
     const classification = enabledKeys.has(key(issue))
       ? "baseline-compiler-failure"
       : enabledLocations.has(location(issue))
@@ -342,9 +407,19 @@ export function assessVariants(variants, spec) {
       });
     }
   }
-  for (const sample of disabled.samples) {
-    const scheduled = enabled.samples.find(({ label }) => label === sample.label);
-    if (!sample.committed || !scheduled?.committed || sample.reset || scheduled.reset) continue;
+  for (const [index, sample] of disabled.samples.entries()) {
+    const scheduledIndex = enabled.samples.findIndex(({ label }) => label === sample.label);
+    const scheduled = enabled.samples[scheduledIndex];
+    if (
+      !sampleSemanticallyClean(sample, disabled.failures) ||
+      !sampleSemanticallyClean(scheduled, enabled.failures) ||
+      (index > 0 && !sampleSemanticallyClean(disabled.samples[index - 1], disabled.failures)) ||
+      (scheduledIndex > 0 &&
+        !sampleSemanticallyClean(enabled.samples[scheduledIndex - 1], enabled.failures)) ||
+      sample.reset ||
+      scheduled.reset
+    )
+      continue;
     for (const [field, reused] of Object.entries(sample.same)) {
       if (reused === true && scheduled.same[field] === false) {
         findings.push({
@@ -390,7 +465,7 @@ export function assessVariants(variants, spec) {
       findings.push({ ...issue, classification: "scheduler-only-diagnostic-change" });
   }
   if (spec.goal) {
-    for (const issue of goalFailures(spec, enabled.samples)) {
+    for (const issue of goalFailures(spec, enabled.samples, enabled.failures)) {
       findings.push({
         ...issue,
         classification: spec.goal.required

@@ -7,6 +7,7 @@ import { SourceTextModule, SyntheticModule } from "node:vm";
 import React from "react";
 import TestRenderer from "react-test-renderer";
 import {
+  accessEventSequence,
   analyzeCode,
   assessVariants,
   check,
@@ -16,6 +17,7 @@ import {
   getPath,
   identityObservations,
   lowerObserverJSX,
+  sampleSemanticallyClean,
   snapshot,
 } from "./oracles.mjs";
 import { buildCase } from "./generate.mjs";
@@ -861,7 +863,11 @@ export async function runVariant(task, spec, variant, binding, progress) {
             check(
               result.failures,
               `execution-events:attempt-${attempt}`,
-              attempts[attempt].externalEvents,
+              accessEventSequence(
+                attempts[attempt].externalEvents,
+                variant,
+                spec.accessEventPolicy,
+              ),
               spec.expectedEvents,
               input.label,
             );
@@ -869,7 +875,7 @@ export async function runVariant(task, spec, variant, binding, progress) {
           check(
             result.failures,
             "accessor-events",
-            state.externalEvents,
+            accessEventSequence(state.externalEvents, variant, spec.accessEventPolicy),
             spec.expectedEvents,
             input.label,
           );
@@ -903,6 +909,12 @@ export async function runVariant(task, spec, variant, binding, progress) {
           ]),
         ),
         externalEvents: [...state.externalEvents],
+        externalEventCounts: Object.fromEntries(
+          [...new Set(state.externalEvents)].map((event) => [
+            event,
+            state.externalEvents.filter((entry) => entry === event).length,
+          ]),
+        ),
         events: state.events.slice(beforeEvents),
       });
       if (committed) {
@@ -959,6 +971,9 @@ export async function runVariant(task, spec, variant, binding, progress) {
       !knownRendererDeprecation && !knownVmWarning && !expectedBoundaryWarning,
   );
   check(result.failures, "react-warnings", unexpectedWarnings, [], null, "runtime");
+  for (const sample of result.samples) {
+    sample.semanticallyClean = sampleSemanticallyClean(sample, result.failures);
+  }
   return result;
 }
 
@@ -978,8 +993,10 @@ export async function runTask(task, binding, progress = () => {}, noMemo = false
     assumption: spec.assumption ?? null,
     optimizationGoal: spec.goal ?? null,
     cacheExpectations: spec.cache ?? {},
+    accessEventPolicy: spec.accessEventPolicy ?? "exact",
+    expectedBaselineDefects: spec.expectedBaselineDefects ?? [],
     observationKind: spec.scalarComponent ? "committed-host-text" : "layout-effect-value",
     variants,
-    findings: assessVariants(variants, spec),
+    findings: assessVariants(variants, spec, task.id),
   };
 }
