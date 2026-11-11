@@ -1,0 +1,12 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/without-memoization-manual.js
+---
+// @enableInstructionReordering:true @disableMemoizationForTesting:true
+import { useMemo, useState } from "react";
+function Component(t0) {
+	const { value } = t0;
+	const result = useMemo(() => ({ value }), [value]);
+	useState(0);
+	return result;
+}

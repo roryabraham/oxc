@@ -1,0 +1,18 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/branch-and-loop.js
+---
+// @enableInstructionReordering:true
+import { useState } from "react";
+function Component(t0) {
+	const { enabled, values } = t0;
+	const items = [];
+	if (enabled) {
+		items.push("enabled");
+	}
+	useState(0);
+	for (const value of values) {
+		items.push(value);
+	}
+	return items;
+}

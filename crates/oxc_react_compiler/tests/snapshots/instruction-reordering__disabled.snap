@@ -1,0 +1,18 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/disabled.js
+---
+// @enableInstructionReordering:false
+import { useState } from "react";
+function Component(t0) {
+	const { x, y } = t0;
+	const a = [];
+	const b = [];
+	useState(0);
+	a.push(x);
+	b.push(y);
+	return {
+		a,
+		b
+	};
+}

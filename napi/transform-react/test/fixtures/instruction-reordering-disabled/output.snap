@@ -1,0 +1,24 @@
+## Code
+
+import { useState } from "react";
+import { jsx as _jsx } from "react/jsx-runtime";
+export function Component(t0) {
+	const { x, y } = t0;
+	const a = [];
+	const b = [];
+	useState(0);
+	a.push(x);
+	b.push(y);
+	return /* @__PURE__ */ _jsx("div", {
+		a,
+		b
+	});
+}
+
+## Errors
+
+(none)
+
+## Fatal
+
+false

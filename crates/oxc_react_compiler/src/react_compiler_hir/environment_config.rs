@@ -108,6 +108,10 @@ pub struct EnvironmentConfig {
 
     pub enable_function_outlining: bool,
     pub enable_jsx_outlining: bool,
+    /// Experimental, opt-in scheduling of inert instructions before scope inference.
+    pub enable_instruction_reordering: bool,
+    /// Test-only control for comparing scheduled and unscheduled code without caches.
+    pub disable_memoization_for_testing: bool,
     pub assert_valid_mutable_ranges: bool,
     pub throw_unknown_exception_testonly: bool,
     pub enable_custom_type_definition_for_reanimated: bool,
@@ -156,6 +160,8 @@ impl Default for EnvironmentConfig {
             enable_emit_instrument_forget: None,
             enable_function_outlining: true,
             enable_jsx_outlining: false,
+            enable_instruction_reordering: false,
+            disable_memoization_for_testing: false,
             assert_valid_mutable_ranges: false,
             throw_unknown_exception_testonly: false,
             enable_custom_type_definition_for_reanimated: false,

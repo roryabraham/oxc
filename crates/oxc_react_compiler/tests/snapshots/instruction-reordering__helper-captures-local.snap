@@ -1,0 +1,23 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/helper-captures-local.js
+---
+import { c as _c } from "react/compiler-runtime";
+// @enableInstructionReordering:true
+import { useState } from "react";
+function Component(t0) {
+	const $ = _c(2);
+	const { value } = t0;
+	useState(0);
+	const stable = value;
+	let t1;
+	if ($[0] !== stable || $[0] === 0 && 1 / $[0] !== 1 / stable) {
+		const helper = () => ({ stable });
+		t1 = helper();
+		$[0] = stable;
+		$[1] = t1;
+	} else {
+		t1 = $[1];
+	}
+	return t1;
+}

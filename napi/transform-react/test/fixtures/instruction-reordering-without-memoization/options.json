@@ -1,0 +1,9 @@
+{
+  "reactCompiler": {
+    "reportDiagnostics": true,
+    "environment": {
+      "enableInstructionReordering": true,
+      "disableMemoizationForTesting": true
+    }
+  }
+}

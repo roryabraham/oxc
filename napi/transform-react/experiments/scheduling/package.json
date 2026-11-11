@@ -1,0 +1,21 @@
+{
+  "name": "oxc-react-scheduling-experiment",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Offline real-React differential checks for instruction scheduling",
+  "type": "module",
+  "scripts": {
+    "self-check": "node self-check.mjs",
+    "test": "node run.mjs --mode short",
+    "exhaustive": "node run.mjs --mode exhaustive"
+  },
+  "dependencies": {
+    "acorn": "8.15.0",
+    "acorn-jsx": "5.3.2",
+    "react": "19.2.3",
+    "react-test-renderer": "19.2.3"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}

@@ -365,6 +365,8 @@ fn set_environment_bool(env: &mut EnvironmentConfig, snake: &str, on: bool) {
         enable_transitively_freeze_function_expressions
         enable_function_outlining
         enable_jsx_outlining
+        enable_instruction_reordering
+        disable_memoization_for_testing
         assert_valid_mutable_ranges
         throw_unknown_exception_testonly
         enable_custom_type_definition_for_reanimated

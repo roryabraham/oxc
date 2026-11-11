@@ -1,0 +1,18 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/captured-mutable-binding.js
+---
+// @enableInstructionReordering:true
+import { useState } from "react";
+function Component(t0) {
+	const { value } = t0;
+	let current = value;
+	const read = () => current;
+	const before = [read()];
+	current = value + 1;
+	useState(0);
+	return {
+		before,
+		after: read()
+	};
+}

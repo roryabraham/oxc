@@ -138,7 +138,9 @@ where
     }
 
     // inferReactiveScopeVariables on the inner function
-    infer_reactive_scope_variables(func, env)?;
+    if !env.config.disable_memoization_for_testing {
+        infer_reactive_scope_variables(func, env)?;
+    }
 
     func.aliasing_effects = Some(ArenaVec::from_iter_in(
         function_effects.iter().map(|e| e.clone_in(env.allocator)),

@@ -295,6 +295,16 @@ pub struct ReactCompilerEnvironmentOptions {
     pub enable_transitively_freeze_function_expressions: Option<bool>,
     pub enable_function_outlining: Option<bool>,
     pub enable_jsx_outlining: Option<bool>,
+    /// Experimental Oxc fork extension: sink inert instructions within basic blocks
+    /// before inferring memoization scopes. Calls and property accesses keep their order.
+    ///
+    /// @default false
+    pub enable_instruction_reordering: Option<bool>,
+    /// Test-only Oxc fork control: run the compiler pipeline without generating caches.
+    /// Used to compare instruction schedules independently of memoization.
+    ///
+    /// @default false
+    pub disable_memoization_for_testing: Option<bool>,
     pub assert_valid_mutable_ranges: Option<bool>,
     pub enable_custom_type_definition_for_reanimated: Option<bool>,
     pub enable_treat_ref_like_identifiers_as_refs: Option<bool>,
@@ -546,6 +556,8 @@ impl ReactCompilerEnvironmentOptions {
             enable_transitively_freeze_function_expressions,
             enable_function_outlining,
             enable_jsx_outlining,
+            enable_instruction_reordering,
+            disable_memoization_for_testing,
             assert_valid_mutable_ranges,
             enable_custom_type_definition_for_reanimated,
             enable_treat_ref_like_identifiers_as_refs,

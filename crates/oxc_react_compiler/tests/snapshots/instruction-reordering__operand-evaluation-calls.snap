@@ -1,0 +1,14 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/operand-evaluation-calls.js
+---
+// @enableInstructionReordering:true @disableMemoizationForTesting:true
+function Component(t0) {
+	const { left, right } = t0;
+	const first = left();
+	const second = right();
+	const b = [second];
+	const n = b[0];
+	const a = [first];
+	return a[0] + n;
+}

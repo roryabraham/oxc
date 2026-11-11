@@ -1,0 +1,71 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/function-observations.js
+---
+import { c as _c } from "react/compiler-runtime";
+// @enableInstructionReordering:true
+import { useState } from "react";
+import { observe } from "shared-runtime";
+function Component(t0) {
+	const $ = _c(14);
+	const { value } = t0;
+	let t1;
+	if ($[0] !== value || $[0] === 0 && 1 / $[0] !== 1 / value) {
+		t1 = function named() {
+			return { value };
+		};
+		$[0] = value;
+		$[1] = t1;
+	} else {
+		t1 = $[1];
+	}
+	const makeValue = t1;
+	const name = makeValue.name;
+	const prototype = makeValue.prototype;
+	let t2;
+	if ($[2] !== makeValue || $[2] === 0 && 1 / $[2] !== 1 / makeValue) {
+		t2 = Object.getOwnPropertyDescriptor(makeValue, "name");
+		$[2] = makeValue;
+		$[3] = t2;
+	} else {
+		t2 = $[3];
+	}
+	const descriptor = t2;
+	let t3;
+	if ($[4] !== makeValue || $[4] === 0 && 1 / $[4] !== 1 / makeValue) {
+		t3 = observe(makeValue);
+		$[4] = makeValue;
+		$[5] = t3;
+	} else {
+		t3 = $[5];
+	}
+	const observed = t3;
+	useState(0);
+	let t4;
+	if ($[6] !== makeValue || $[6] === 0 && 1 / $[6] !== 1 / makeValue) {
+		t4 = makeValue();
+		$[6] = makeValue;
+		$[7] = t4;
+	} else {
+		t4 = $[7];
+	}
+	let t5;
+	if ($[8] !== descriptor || $[8] === 0 && 1 / $[8] !== 1 / descriptor || $[9] !== name || $[9] === 0 && 1 / $[9] !== 1 / name || $[10] !== observed || $[10] === 0 && 1 / $[10] !== 1 / observed || $[11] !== prototype || $[11] === 0 && 1 / $[11] !== 1 / prototype || $[12] !== t4 || $[12] === 0 && 1 / $[12] !== 1 / t4) {
+		t5 = {
+			name,
+			prototype,
+			descriptor,
+			observed,
+			result: t4
+		};
+		$[8] = descriptor;
+		$[9] = name;
+		$[10] = observed;
+		$[11] = prototype;
+		$[12] = t4;
+		$[13] = t5;
+	} else {
+		t5 = $[13];
+	}
+	return t5;
+}
