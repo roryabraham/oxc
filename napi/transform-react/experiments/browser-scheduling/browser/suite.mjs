@@ -3,7 +3,14 @@ import { createElement as h, memo, Suspense, version as reactVersion } from "rea
 import { flushSync, version as reactDomVersion } from "react-dom";
 import { modes, profiles, scenarios } from "../catalog.mjs";
 import { ContextDriver, ErrorBoundary, Probe, TransitionDriver } from "./runtime.jsx";
-import { createStore, deferredResource, errorDetails, readyResource, Session } from "./session.mjs";
+import {
+  createStore,
+  deferredResource,
+  errorDetails,
+  readyResource,
+  Session,
+  snapshot,
+} from "./session.mjs";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -64,96 +71,80 @@ const tests = {
   },
 
   async "state-callsite-order"(session, Component) {
-    await session.render(h(Component, { session, seed: "seed" }));
+    let seed = "seed";
+    await session.render(h(Component, { session, seed }));
     const retained = session.latest().actions;
-    const values = () => {
-      const { left, right } = session.latest().data;
-      return { left, right };
+    const check = (name, left, right) => {
+      const { data } = session.latest();
+      session.checkpoint(name, data, {
+        left,
+        right,
+        leftAllocation: [seed, "left"],
+        rightAllocation: [seed, "right"],
+      });
+      session.check(
+        data.leftAllocation !== data.rightAllocation,
+        "Hook allocation callsites keep distinct arrays",
+      );
     };
-    session.checkpoint("initial callsites", values(), { left: 2, right: 30 });
+    check("initial callsites", 2, 30);
     for (let index = 0; index < 12; index += 1) {
       await session.click("main", "leftStep");
-      session.checkpoint(`left event ${index}`, values(), {
-        left: 3 + index,
-        right: 30 + 10 * index,
-      });
+      check(`left event ${index}`, 3 + index, 30 + 10 * index);
       await session.click("main", "rightStep");
-      session.checkpoint(`right event ${index}`, values(), {
-        left: 3 + index,
-        right: 40 + 10 * index,
-      });
+      check(`right event ${index}`, 3 + index, 40 + 10 * index);
     }
+    seed = "changed-seed";
+    await session.render(h(Component, { session, seed }));
+    check("allocation dependency changes independently", 14, 150);
     await session.change(() => retained.capturedLeft());
-    session.checkpoint("retained left captured event", values(), { left: 7, right: 150 });
+    check("retained left captured event", 7, 150);
     await session.change(() => retained.capturedRight());
-    session.checkpoint("retained right captured event", values(), { left: 7, right: 37 });
+    check("retained right captured event", 7, 37);
     await session.change(() => {
       retained.leftStep();
       retained.rightStep();
     });
-    session.checkpoint("retained functional events", values(), { left: 8, right: 47 });
+    check("retained functional events", 8, 47);
     await session.click("main", "capturedLeft");
+    check("current left captured event", 13, 47);
     await session.click("main", "capturedRight");
-    session.checkpoint("current captured events", values(), { left: 13, right: 54 });
+    check("current right captured event", 13, 54);
   },
 
   async "retained-allocations-handlers"(session, Component) {
     const retained = [];
     let count = 0;
-    for (let revision = 0; revision < 8; revision += 1) {
-      const value = `value-${revision}`;
-      await session.render(h(Component, { session, value, revision }));
+    const revisions = [13, -4, 41, 7, 200, -19, 8, 29];
+    const updates = [2, 0, 3, 1, 4, 0, 2, 1];
+    const check = (name, expected) => {
       const current = session.latest();
-      const expected = `${value}:${count}:${revision}`;
-      session.checkpoint(`current helper ${revision}`, current.actions.describe(), expected);
-      session.equal(
-        current.data.helpers[0](),
-        expected,
-        "Helper array closes over current allocations",
-      );
-      session.equal(
-        current.actions.copy(),
-        [value, count, revision],
-        "Current helper copy uses current values",
-      );
-      retained.push({ current, expected, copy: [value, count, revision] });
-      await session.click("main", "advance");
-      count += 1;
-      session.checkpoint(
-        `event helper ${revision}`,
-        session.latest().actions.describe(),
-        `${value}:${count}:${revision}`,
-      );
-      for (const old of retained) {
-        session.equal(
-          old.current.actions.describe(),
+      assertAllocationRecord(session, current, expected, name, true);
+      for (const [index, old] of retained.entries()) {
+        assertAllocationRecord(
+          session,
+          old.current,
           old.expected,
-          "Retained event reads its committed allocation",
+          `${name}: retained ${index}`,
+          false,
         );
-        session.equal(
-          old.current.data.helpers[0](),
-          old.expected,
-          "Retained helper array reads its committed allocation",
-        );
-        session.equal(
-          old.current.actions.copy(),
-          old.copy,
-          "Retained helper copy reads prior committed values",
-        );
+      }
+      retained.push({ current, expected });
+    };
+    for (const [index, revision] of revisions.entries()) {
+      const value = `value-${index}`;
+      await session.render(h(Component, { session, value, revision }));
+      check(`prop revision ${index}`, { value, count, revision });
+      for (let step = 0; step < updates[index]; step += 1) {
+        await session.click("main", "advance");
+        count += 1;
+        check(`state revision ${index}, step ${step}`, { value, count, revision });
       }
     }
     await session.change(() => retained[0].current.actions.capturedAdvance());
-    session.checkpoint(
-      "retained captured state update",
-      session.latest().actions.describe(),
-      "value-7:2:7",
-    );
+    check("retained captured state update", { value: "value-7", count: 2, revision: 29 });
     await session.change(() => retained[0].current.actions.advance());
-    session.checkpoint(
-      "retained functional state update",
-      session.latest().actions.describe(),
-      "value-7:3:7",
-    );
+    check("retained functional state update", { value: "value-7", count: 3, revision: 29 });
   },
 
   async "layout-effect-resources"(session, Component) {
@@ -188,13 +179,14 @@ const tests = {
     );
   },
 
-  async "transition-resume-urgent"(session, Component) {
+  async "transition-resume-urgent"(session, Component, _mode, scenario) {
     const initial = readyResource("initial", "one");
     const pending = deferredResource("later");
     await session.render(
       h(TransitionDriver, { session, Child: Component, initialResource: initial }),
     );
     const retained = session.latest();
+    assertTransitionOutput(session, scenario, "initial complete output", "initial", "one", 3);
     session.checkpoint("initial transition content", retained.actions.read(), "initial:one:3");
     const initialCommits = session.commits.length;
     await session.change(() => session.latest("shell").actions.begin(pending));
@@ -208,7 +200,16 @@ const tests = {
       !session.activeProbes.has("fallback"),
       "Transition does not replace mounted content with fallback",
     );
+    assertTransitionOutput(session, scenario, "complete output while pending", "initial", "one", 3);
     await session.click("shell", "urgent");
+    assertTransitionOutput(
+      session,
+      scenario,
+      "complete output after urgent sibling",
+      "initial",
+      "one",
+      3,
+    );
     session.checkpoint(
       "urgent sibling while suspended",
       {
@@ -219,12 +220,21 @@ const tests = {
       { urgent: 1, pending: true, content: "initial:one:3" },
     );
     await session.click("main", "advance");
+    assertTransitionOutput(
+      session,
+      scenario,
+      "complete output after urgent local event",
+      "initial",
+      "one",
+      4,
+    );
     session.checkpoint(
       "urgent local state while suspended",
       session.latest().actions.read(),
       "initial:one:4",
     );
     await session.change(() => pending.resolve("two"));
+    assertTransitionOutput(session, scenario, "complete output after retry", "later", "two", 4);
     session.checkpoint(
       "transition retry commit",
       {
@@ -245,7 +255,7 @@ const tests = {
     );
   },
 
-  async "transition-abandon"(session, Component) {
+  async "transition-abandon"(session, Component, _mode, scenario) {
     const pending = deferredResource("abandoned");
     await session.render(
       h(TransitionDriver, {
@@ -255,15 +265,26 @@ const tests = {
       }),
     );
     const retained = session.latest();
+    assertTransitionOutput(session, scenario, "initial complete output", "initial", "one", 3);
     await session.change(() => session.latest("shell").actions.begin(pending));
     session.check(
       session.latest("shell").data.pending,
       "Abandoned transition first commits pending state",
     );
+    assertTransitionOutput(session, scenario, "complete output while pending", "initial", "one", 3);
     await session.click("shell", "urgent");
+    assertTransitionOutput(
+      session,
+      scenario,
+      "complete output after urgent sibling",
+      "initial",
+      "one",
+      3,
+    );
     await session.change(() => {
       flushSync(() => session.latest("shell").actions.replace(readyResource("winner", "three")));
     });
+    assertTransitionOutput(session, scenario, "complete replacement output", "winner", "three", 3);
     session.checkpoint(
       "urgent replacement commits",
       {
@@ -273,6 +294,14 @@ const tests = {
       { urgent: 1, content: "winner:three:3" },
     );
     await session.change(() => pending.resolve("stale"));
+    assertTransitionOutput(
+      session,
+      scenario,
+      "complete output after stale resolution",
+      "winner",
+      "three",
+      3,
+    );
     session.checkpoint(
       "abandoned promise resolves",
       {
@@ -293,6 +322,14 @@ const tests = {
       "initial:one:3",
       "Abandoning a render preserves retained handlers",
     );
+  },
+
+  async "transition-motion-resume-urgent"(...args) {
+    await tests["transition-resume-urgent"](...args);
+  },
+
+  async "transition-motion-abandon"(...args) {
+    await tests["transition-abandon"](...args);
   },
 
   async "suspense-initial-retry"(session, Component) {
@@ -492,7 +529,197 @@ const tests = {
     await session.change(() => first.actions.step());
     session.checkpoint("retained manual event", session.latest().actions.read(), "second:2");
   },
+
+  async "conditional-suspense-demand"(session, Component) {
+    const mount = (visible, resource, key = "demand") =>
+      session.render(
+        h(
+          ErrorBoundary,
+          { session, key },
+          h(
+            Suspense,
+            {
+              fallback: h(Probe, { session, label: "fallback", data: { waiting: true } }),
+            },
+            h(Component, { session, visible, resource }),
+          ),
+        ),
+      );
+    const check = (name, visible, local, key = "hidden", rows = []) => {
+      session.checkpoint(name, session.latest().data, { visible, local, key, rows });
+    };
+    const pending = deferredResource("conditional");
+    await mount(false, pending);
+    check("hidden pending promise is not demanded", false, 4);
+    session.check(
+      session.commits.every((commit) => commit.label !== "fallback"),
+      "Hidden conditional use does not commit fallback",
+    );
+    await session.click("main", "advance");
+    check("hidden state event", false, 5);
+    await mount(true, pending);
+    session.check(
+      session.activeProbes.has("fallback"),
+      "Showing pending conditional use commits fallback",
+    );
+    session.check(
+      session.commits.every((commit) => commit.label !== "main" || !commit.data.visible),
+      "Pending visible content never commits",
+    );
+    await mount(false, pending);
+    check("hiding abandons conditional suspension", false, 5);
+    session.check(
+      !session.activeProbes.has("fallback"),
+      "Hiding removes the fallback while promise remains pending",
+    );
+    const hiddenCommit = session.commits.length;
+    await session.change(() => pending.resolve("one"));
+    check("hidden promise resolution", false, 5);
+    session.check(
+      session.commits
+        .slice(hiddenCommit)
+        .every((commit) => commit.label !== "main" || !commit.data.visible),
+      "Hidden resolution cannot commit visible content",
+    );
+    await mount(true, pending);
+    check("show resolved conditional use", true, 5, "conditional", ["one"]);
+    await session.click("main", "advance");
+    check("visible state event", true, 6, "conditional", ["one"]);
+
+    const rejected = deferredResource("conditional-rejection");
+    rejected.promise.catch(() => {});
+    await mount(false, rejected);
+    check("hide before rejection", false, 6);
+    await session.change(() => rejected.reject(new Error("conditional demand rejection")));
+    check("hidden rejected promise is not demanded", false, 6);
+    session.equal(
+      session.caughtErrors,
+      [],
+      "Hidden rejected use has not reached an error boundary",
+    );
+    session.expectedCaught.push("conditional demand rejection");
+    await mount(true, rejected);
+    session.checkpoint("visible rejection is demanded", session.latest("error").data, {
+      message: "conditional demand rejection",
+    });
+    session.check(
+      !session.activeProbes.has("main"),
+      "A rejected visible branch does not leave main content mounted",
+    );
+    await mount(false, rejected, "recovered-demand");
+    check("hidden recovery does not demand rejected use", false, 4);
+    await mount(true, readyResource("third", "three"), "recovered-demand");
+    check("visible recovery", true, 4, "third", ["three"]);
+    const finalPending = deferredResource("hidden-again");
+    await mount(false, finalPending, "recovered-demand");
+    check("hide again with another pending promise", false, 4);
+    await session.change(() => finalPending.resolve("late"));
+    check("final hidden resolution", false, 4);
+  },
+
+  async "conditional-exception-order"(session, Component) {
+    const mount = (visible, failFirst, failSecond, key) =>
+      session.render(
+        h(
+          ErrorBoundary,
+          { session, key },
+          h(Component, { session, visible, failFirst, failSecond }),
+        ),
+      );
+    const check = (name, visible, local, values) =>
+      session.checkpoint(name, session.latest().data, { visible, local, values });
+    await mount(false, true, true, "both-throw");
+    check("hidden throwing sites are not demanded", false, 9, ["hidden"]);
+    await session.click("main", "advance");
+    check("hidden throwing branch state event", false, 10, ["hidden"]);
+    session.expectedCaught.push("first throwing site");
+    await mount(true, true, true, "both-throw");
+    session.checkpoint("both sites throw: first exception wins", session.latest("error").data, {
+      message: "first throwing site",
+    });
+    session.check(
+      session.commits.every((commit) => commit.label !== "main" || !commit.data.visible),
+      "Throwing visible branch never commits a partial result",
+    );
+
+    await mount(false, true, true, "second-throw");
+    check("hidden throwing recovery", false, 9, ["hidden"]);
+    session.expectedCaught.push("second throwing site");
+    await mount(true, false, true, "second-throw");
+    session.checkpoint("second throwing site remains reachable", session.latest("error").data, {
+      message: "second throwing site",
+    });
+
+    await mount(true, false, false, "successful-demand");
+    check("visible successful computations", true, 9, ["first-ok", "second-ok"]);
+    await mount(false, true, true, "successful-demand");
+    check("hide with both throwing sites armed", false, 9, ["hidden"]);
+    await session.click("main", "advance");
+    check("independent hidden update with armed throw sites", false, 10, ["hidden"]);
+    await mount(true, false, false, "successful-demand");
+    check("show successful computations after hidden update", true, 10, ["first-ok", "second-ok"]);
+    await mount(false, true, true, "successful-demand");
+    check("hide successful content with throwing sites armed", false, 10, ["hidden"]);
+  },
 };
+
+function assertAllocationRecord(session, current, { value, revision, count }, name, checkpoint) {
+  const prefix = [value, revision];
+  const row = [value, count];
+  const expected = {
+    value,
+    revision,
+    count,
+    prefix,
+    row,
+    packet: { prefix, row, revision },
+    helpers: ["[function]", "[function]"],
+  };
+  if (checkpoint) session.checkpoint(name, snapshot(current.data), expected);
+  else session.equal(snapshot(current.data), expected, `${name}: all retained fields`);
+  const { data, actions } = current;
+  session.check(data.packet.prefix === data.prefix, `${name}: packet.prefix aliases prefix`);
+  session.check(data.packet.row === data.row, `${name}: packet.row aliases row`);
+  session.check(data.helpers[0] === actions.describe, `${name}: first helper aliases describe`);
+  session.check(data.helpers[1] === actions.copy, `${name}: second helper aliases copy`);
+  session.check(data.prefix !== data.row, `${name}: prefix and row are distinct allocations`);
+  const description = `${value}:${count}:${revision}`;
+  const copy = [value, count, revision];
+  session.equal(actions.describe(), description, `${name}: describe returns its expected capture`);
+  session.equal(
+    data.helpers[0](),
+    description,
+    `${name}: first helper returns its expected capture`,
+  );
+  session.equal(actions.copy(), copy, `${name}: copy returns its expected capture`);
+  session.equal(data.helpers[1](), copy, `${name}: second helper returns its expected capture`);
+}
+
+function assertTransitionOutput(session, scenario, name, key, payload, local) {
+  const request = [key, "request"];
+  const expected = { request, payload, local };
+  const moving = scenario.fixture === "transition-motion";
+  if (moving) expected.rows = [payload];
+  expected.output = { ...expected };
+  const { data, actions } = session.latest();
+  session.checkpoint(name, data, expected);
+  session.equal(
+    actions.read(),
+    `${key}:${payload}:${local}`,
+    `${name}: event sees complete committed captures`,
+  );
+  session.check(
+    data.output.request === data.request,
+    `${name}: output.request retains its array alias`,
+  );
+  if (moving) {
+    session.check(
+      data.output.rows === data.rows,
+      `${name}: output.rows retains its moved array alias`,
+    );
+    session.check(data.rows !== data.request, `${name}: moved rows remain distinct from request`);
+  }
+}
 
 function suspenseTree(session, Component, resource) {
   return h(
@@ -556,7 +783,7 @@ async function runCase(scenario, mode, profile, entry) {
   const session = new Session(profile);
   const errors = [];
   try {
-    await tests[scenario.id](session, entry.Component, mode);
+    await tests[scenario.id](session, entry.Component, mode, scenario);
   } catch (error) {
     errors.push(errorDetails(error));
   } finally {
@@ -603,6 +830,14 @@ export async function run(registry, metadata) {
       for (const scenario of scenarios) {
         const groupResults = [];
         for (const mode of modes) {
+          const cell = {
+            scenario: scenario.id,
+            fixture: scenario.fixture,
+            profile: profile.id,
+            mode: mode.id,
+          };
+          window.__schedulingActiveCell = cell;
+          await postProgress("/progress", { runId: metadata.runId, cell });
           document.getElementById("status").textContent =
             `${profile.id} / ${scenario.id} / ${mode.id}`;
           const result = await runCase(
@@ -613,6 +848,8 @@ export async function run(registry, metadata) {
           );
           results.push(result);
           groupResults.push(result);
+          await postProgress("/cell-result", { runId: metadata.runId, result });
+          window.__schedulingActiveCell = null;
         }
         const group = {
           scenario: scenario.id,
@@ -693,4 +930,13 @@ export async function run(registry, metadata) {
   });
   if (!response.ok) throw new Error(`Persisting browser results failed: ${response.status}`);
   return report;
+}
+
+async function postProgress(path, payload) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`External watchdog progress failed: ${response.status}`);
 }

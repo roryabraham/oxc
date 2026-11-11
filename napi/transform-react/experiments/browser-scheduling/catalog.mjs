@@ -49,6 +49,18 @@ export const scenarios = [
       "A superseded suspended transition cannot replace a newer urgent commit when it resolves.",
   },
   {
+    id: "transition-motion-resume-urgent",
+    fixture: "transition-motion",
+    invariant:
+      "A structurally verified allocation moves across useState/use while urgent updates and a suspended transition preserve all committed arrays.",
+  },
+  {
+    id: "transition-motion-abandon",
+    fixture: "transition-motion",
+    invariant:
+      "A structurally verified allocation moves across suspension without an abandoned render mutating committed arrays or committing stale content.",
+  },
+  {
     id: "suspense-initial-retry",
     fixture: "suspense",
     invariant:
@@ -82,5 +94,17 @@ export const scenarios = [
     fixture: "manual",
     invariant:
       "Explicit useMemo/useCallback identities and captured values survive all five compiler modes.",
+  },
+  {
+    id: "conditional-suspense-demand",
+    fixture: "demand",
+    invariant:
+      "Hidden conditional use neither suspends nor throws; showing demands its promise, hiding abandons it, and later resolution cannot reveal hidden content.",
+  },
+  {
+    id: "conditional-exception-order",
+    fixture: "exceptions",
+    invariant:
+      "Hidden throwing computations are not demanded, and two deterministic throwing sites preserve the first observable exception.",
   },
 ];
