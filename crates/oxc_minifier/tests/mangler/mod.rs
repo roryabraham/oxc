@@ -135,6 +135,7 @@ fn mangler() {
         "function _() { var x; try { throw 0 } catch (e) { e } }", // e can shadow x
         "function _() { var x; try { throw 0 } catch (e) { var e } }", // e can shadow x (not implemented)
         "function _() { var x; try { throw 0 } catch { var e } }",     // e should not shadow x
+        "function _() { var y; try { throw 0 } catch (y) { var y = 2; () => { let w; y } } }", // w should not shadow the catch y
         "function _() { var x; var y; }", // x and y should have different names
         "function _() { var x; let y; }", // x and y should have different names
         "function _() { { var x; var y; } }", // x and y should have different names

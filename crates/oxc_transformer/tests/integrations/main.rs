@@ -1,3 +1,4 @@
+mod class_properties;
 mod comments;
 mod enum_eval;
 mod es_target;
