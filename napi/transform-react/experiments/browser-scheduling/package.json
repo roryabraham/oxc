@@ -1,0 +1,19 @@
+{
+  "name": "oxc-react-browser-scheduling-experiment",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated, commit-observed React DOM instruction scheduling experiment",
+  "type": "module",
+  "scripts": {
+    "start": "node cli.mjs",
+    "check": "node --check cli.mjs && node --check catalog.mjs && node --check browser/session.mjs && node --check browser/suite.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.25.12",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
