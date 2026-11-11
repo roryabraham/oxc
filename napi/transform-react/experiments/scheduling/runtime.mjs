@@ -7,10 +7,10 @@ import { SourceTextModule, SyntheticModule } from "node:vm";
 import React from "react";
 import TestRenderer from "react-test-renderer";
 import {
-  accessEventSequence,
   analyzeCode,
   assessVariants,
   check,
+  checkAccessEvents,
   dependencyEqual,
   errorRecord,
   failure,
@@ -201,6 +201,12 @@ function observedRuntime(state) {
   };
 }
 
+function recordExternalEvent(state, event) {
+  if (!state.attempt) return;
+  state.externalEvents.push(event);
+  state.attempt.externalEvents.push(event);
+}
+
 function makeInputs(spec, state) {
   const arrays = new Map();
   const resources = new Map();
@@ -229,18 +235,18 @@ function makeInputs(spec, state) {
       if (spec.external === "getter") {
         result.data = Object.freeze({
           get left() {
-            if (state.attempt) state.externalEvents.push("get:left");
+            recordExternalEvent(state, "get:left");
             return input.inputA;
           },
           get right() {
-            if (state.attempt) state.externalEvents.push("get:right");
+            recordExternalEvent(state, "get:right");
             return input.inputB;
           },
         });
       } else if (spec.external === "proxy") {
         result.data = new Proxy(Object.freeze({ left: input.inputA, right: input.inputB }), {
           get(target, key) {
-            if (state.attempt) state.externalEvents.push(`get:${String(key)}`);
+            recordExternalEvent(state, `get:${String(key)}`);
             return Reflect.get(target, key);
           },
         });
@@ -250,7 +256,7 @@ function makeInputs(spec, state) {
             side,
             {
               [Symbol.toPrimitive]() {
-                if (state.attempt) state.externalEvents.push(`key:${side}`);
+                recordExternalEvent(state, `key:${side}`);
                 return "value";
               },
             },
@@ -262,7 +268,7 @@ function makeInputs(spec, state) {
             side,
             {
               *[Symbol.iterator]() {
-                if (state.attempt) state.externalEvents.push(`iterate:${side}`);
+                recordExternalEvent(state, `iterate:${side}`);
                 yield side === "left" ? input.inputA : input.inputB;
               },
             },
@@ -271,11 +277,10 @@ function makeInputs(spec, state) {
       } else if (["anchor-getters", "anchor-calls"].includes(spec.external)) {
         for (const side of ["left", "right"]) {
           const read = () => {
-            if (state.attempt) {
-              const event = `${spec.external === "anchor-calls" ? "call" : "get"}:${side}`;
-              state.externalEvents.push(event);
-              state.attempt.externalEvents.push(event);
-            }
+            recordExternalEvent(
+              state,
+              `${spec.external === "anchor-calls" ? "call" : "get"}:${side}`,
+            );
             if (side === "left" ? input.throwLeft : input.throwRight)
               throw new Error(`${side}-error`);
             return side === "left" ? input.inputA : input.inputB;
@@ -858,27 +863,14 @@ export async function runVariant(task, spec, variant, binding, progress) {
         result.counts.committedSteps++;
       }
       if (spec.expectedEvents) {
-        if (spec.eventsPerAttempt) {
-          for (let attempt = 0; attempt < attempts.length; attempt++)
-            check(
-              result.failures,
-              `execution-events:attempt-${attempt}`,
-              accessEventSequence(
-                attempts[attempt].externalEvents,
-                variant,
-                spec.accessEventPolicy,
-              ),
-              spec.expectedEvents,
-              input.label,
-            );
-        } else
-          check(
-            result.failures,
-            "accessor-events",
-            accessEventSequence(state.externalEvents, variant, spec.accessEventPolicy),
-            spec.expectedEvents,
-            input.label,
-          );
+        checkAccessEvents(
+          result.failures,
+          attempts,
+          spec.expectedEvents,
+          variant,
+          spec.accessEventPolicy,
+          input.label,
+        );
       }
       if (spec.strict) verifyStrictResources(result, spec, state.events, input, input.label);
       else

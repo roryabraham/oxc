@@ -85,6 +85,18 @@ export function accessEventSequence(events, variant, policy) {
   );
 }
 
+export function checkAccessEvents(failures, attempts, expected, variant, policy, step) {
+  for (const [index, attempt] of attempts.entries()) {
+    check(
+      failures,
+      `execution-events:attempt-${index}`,
+      accessEventSequence(attempt.externalEvents, variant, policy),
+      expected,
+      step,
+    );
+  }
+}
+
 export function isInformationalFinding(classification, requireOptionalGoals = false) {
   return (
     classification === "expected-baseline-defect" ||
@@ -330,7 +342,34 @@ export function assessVariants(variants, spec, taskId) {
   const disabledFailures = atomicFailures(disabled.failures);
   const enabledFailures = atomicFailures(enabled.failures);
   const expectedBaseline = new Map();
-  for (const defect of spec.expectedBaselineDefects ?? []) {
+  const declarations = spec.expectedBaselineDefects ?? [];
+  const declarationIds = new Set();
+  const declarationSignatures = new Set();
+  let duplicateDeclarations = false;
+  for (const defect of declarations) {
+    const signature = JSON.stringify([defect.caseId, key(defect)]);
+    for (const [field, value, seen] of [
+      ["id", defect.id, declarationIds],
+      ["signature", signature, declarationSignatures],
+    ]) {
+      if (seen.has(value)) {
+        duplicateDeclarations = true;
+        findings.push({
+          ...failure(
+            `baseline-defect-${field}-unique`,
+            value,
+            "a unique declaration",
+            null,
+            "coverage",
+          ),
+          classification: "expected-baseline-declaration-duplicate",
+          defect,
+        });
+      }
+      seen.add(value);
+    }
+  }
+  for (const defect of duplicateDeclarations ? [] : declarations) {
     const occurrences =
       defect.caseId === taskId
         ? disabledFailures.filter((issue) => key(issue) === key(defect)).length
@@ -463,6 +502,12 @@ export function assessVariants(variants, spec, taskId) {
     );
     for (const issue of changes)
       findings.push({ ...issue, classification: "scheduler-only-diagnostic-change" });
+    if (taskId === "control/special-primitives-compact" && before.code !== after.code) {
+      findings.push({
+        ...failure("compact-no-memo-output-unchanged", after.code, before.code, null, "coverage"),
+        classification: "no-motion-control-failure",
+      });
+    }
   }
   if (spec.goal) {
     for (const issue of goalFailures(spec, enabled.samples, enabled.failures)) {

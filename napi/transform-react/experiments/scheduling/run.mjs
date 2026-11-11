@@ -436,7 +436,9 @@ function summarize(results, options, suite, canary, metadata, started, stopped) 
         0,
       ),
       observed: findings["expected-baseline-defect"] ?? 0,
-      mismatches: findings["expected-baseline-defect-mismatch"] ?? 0,
+      mismatches:
+        (findings["expected-baseline-defect-mismatch"] ?? 0) +
+        (findings["expected-baseline-declaration-duplicate"] ?? 0),
     },
     diagnosticCounts,
     acceptedNoCacheFunctions,

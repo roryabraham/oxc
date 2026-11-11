@@ -233,8 +233,11 @@ optimization oracle, with a function-specific activation/cache canary.
 The four explicit pure-accessor fixtures (`getter`, `proxy`,
 `unnamed-getter-order`, `typecast-getter-order`) return deterministic snapshot
 values. For B/S only, their event oracle collapses **consecutive identical**
-`get:left` or `get:right` reads: `LLLRRR` satisfies `LR`, while `RRRLLL` and `LRL`
-do not. Predicate/store rereads remain visible in raw `externalEvents` and
+`get:left` or `get:right` reads within **one recorded component invocation**:
+`LLLRRR` satisfies `LR`, while `RRRLLL` and `LRL` do not. Invocations are checked
+separately; a retry cannot supply an earlier invocation's missing read, and valid
+StrictMode replays do not require a particular invocation count. Each attempt
+retains its raw `externalEvents`. Aggregate predicate/store rereads remain visible in raw `externalEvents` and
 `externalEventCounts` telemetry. U/M0/M1 require exact count and order. Throwing
 getters, unknown calls, coercions, iterators, other property events, and every
 unmarked fixture retain exact event checks. First-throw events and errors are
@@ -283,16 +286,25 @@ An explicitly declared baseline defect can be classified
 `expected-baseline-defect`. Every declaration specifies an exact case ID,
 check, step, output path, wrong value, and expected value. It must occur exactly
 once in B; disappearance, a changed mismatch, or duplicate occurrences fail
-verification and require rebaselining. The raw B assertion is retained. This
+verification and require rebaselining. Duplicate declaration IDs or exact-match
+signatures reject the inventory before matching any failure. The raw B assertion is retained. This
 mechanism cannot waive U/S/M0/M1 failures, including S exhibiting the same defect.
 Undeclared baseline failures fail even if S fixes them. Inventory totals are
 reported under `expectedBaselineDefects`.
 
-The only declared inventory is B's `control/special-primitives` signed-zero
+One declared inventory is B's `control/special-primitives` signed-zero
 defect: `holes[1]` and the exact host text at `positive-zero`, plus that same
 retained output's `holes[1]` at `NaN`, `NaN-stable`, and `undefined`. All five
-specific mismatches must be observed. No other case, path, step, or variant is
-exempted, and the complete source/S/M0/M1 value assertions remain active.
+specific mismatches must be observed.
+
+`control/special-primitives-compact` uses the same numeric trace with grouped,
+hook-free property-based literal constructions. Its M0/M1 emitted output must
+be identical. S must still preserve signed zero even without scheduling motion.
+Its nine explicit baseline mismatches cover `a[0]` and `holes[1]` at
+`positive-zero`, those same two paths in the three retained-snapshot checks,
+and the exact `positive-zero` host text. These two controls are the entire
+baseline inventory: fourteen matches when both run. No other case, path, step,
+or variant is exempted, and complete source/S/M0/M1 value assertions remain active.
 
 Literal array/object families have required independent-reuse goals. Optional
 families still run semantic checks and report misses: e.g. multiple writes

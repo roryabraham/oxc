@@ -22,6 +22,7 @@ import {
   analyzeCode,
   assessCanary,
   assessVariants,
+  checkAccessEvents,
   equal,
   failure,
   goalFailures,
@@ -474,7 +475,7 @@ verify(
     );
     assert.deepEqual(
       cases.map(({ id }) => id),
-      ["control/special-primitives"],
+      ["control/special-primitives", "control/special-primitives-compact"],
     );
     const defects = buildCase(cases[0]).expectedBaselineDefects;
     assert.equal(new Set(defects.map(({ id }) => id)).size, 5);
@@ -489,6 +490,28 @@ verify(
         ["returned-values", "positive-zero", "$.holes.1"],
         ["retained-output:positive-zero", "NaN", "$.holes.1"],
         ["retained-output:positive-zero", "NaN-stable", "$.holes.1"],
+        ["retained-output:positive-zero", "undefined", "$.holes.1"],
+        ["rendered-host-tree", "positive-zero", "$.children.0"],
+      ],
+    );
+    const compactDefects = buildCase(cases[1]).expectedBaselineDefects;
+    assert.equal(new Set([...defects, ...compactDefects].map(({ id }) => id)).size, 14);
+    assert(
+      compactDefects.every(
+        ({ caseId, kind }) =>
+          caseId === "control/special-primitives-compact" && kind === "semantic",
+      ),
+    );
+    assert.deepEqual(
+      compactDefects.map(({ check, step, path }) => [check, step, path]),
+      [
+        ["returned-values", "positive-zero", "$.a.0"],
+        ["returned-values", "positive-zero", "$.holes.1"],
+        ["retained-output:positive-zero", "NaN", "$.a.0"],
+        ["retained-output:positive-zero", "NaN", "$.holes.1"],
+        ["retained-output:positive-zero", "NaN-stable", "$.a.0"],
+        ["retained-output:positive-zero", "NaN-stable", "$.holes.1"],
+        ["retained-output:positive-zero", "undefined", "$.a.0"],
         ["retained-output:positive-zero", "undefined", "$.holes.1"],
         ["rendered-host-tree", "positive-zero", "$.children.0"],
       ],
@@ -588,6 +611,127 @@ verify("zero-case CLI selections fail instead of producing a passing empty run",
   assert.equal(result.status, 3);
   assert.match(result.stderr, /zero cases/);
 });
+
+verify(
+  "access events are normalized within invocations without borrowing reads from a replay",
+  () => {
+    const expected = ["get:left", "get:right"];
+    const attempt = (externalEvents) => ({ externalEvents });
+    const replay = [attempt(["get:left"]), attempt(["get:left", "get:right"])];
+    assert.deepEqual(
+      accessEventSequence(
+        replay.flatMap(({ externalEvents }) => externalEvents),
+        "enabled",
+        "pure-accessor-reads",
+      ),
+      expected,
+    );
+    const failures = [];
+    checkAccessEvents(failures, replay, expected, "enabled", "pure-accessor-reads", "update");
+    assert.deepEqual(
+      failures.map(({ check }) => check),
+      ["execution-events:attempt-0"],
+    );
+    for (const count of [1, 2, 4]) {
+      const strictReplay = Array.from({ length: count }, () => attempt([...expected]));
+      const actual = [];
+      checkAccessEvents(actual, strictReplay, expected, "source", "pure-accessor-reads", "update");
+      assert.deepEqual(actual, []);
+    }
+    const repeated = [
+      attempt(expected),
+      attempt(["get:left", "get:left", "get:right", "get:right"]),
+    ];
+    const memoized = [];
+    checkAccessEvents(memoized, repeated, expected, "enabled", "pure-accessor-reads", "update");
+    assert.deepEqual(memoized, []);
+    for (const variant of ["source", "noMemoDisabled", "noMemoEnabled"]) {
+      const exact = [];
+      checkAccessEvents(exact, repeated, expected, variant, "pure-accessor-reads", "update");
+      assert.deepEqual(
+        exact.map(({ check }) => check),
+        ["execution-events:attempt-1"],
+      );
+    }
+  },
+);
+
+verify("duplicate baseline declaration IDs and signatures are rejected before any matching", () => {
+  const taskId = "control/special-primitives";
+  const defect = {
+    id: "signed-zero",
+    caseId: taskId,
+    kind: "semantic",
+    check: "returned-values",
+    step: "positive-zero",
+    path: "$.holes.1",
+    actual: { $type: "negative-zero" },
+    expected: 0,
+  };
+  const rawFailure = failure(
+    "returned-values",
+    { holes: [1, -0], a: [-0] },
+    { holes: [1, 0], a: [0] },
+    "positive-zero",
+  );
+  const variants = {
+    source: emptyVariant(),
+    disabled: { ...emptyVariant(), failures: [rawFailure] },
+    enabled: emptyVariant(),
+  };
+  for (const [declarations, field] of [
+    [[defect, { ...defect, path: "$.a.0" }], "id"],
+    [[defect, { ...defect, id: "another-id" }], "signature"],
+  ]) {
+    const findings = assessVariants(variants, { expectedBaselineDefects: declarations }, taskId);
+    assert(
+      findings.some(
+        ({ classification, check }) =>
+          classification === "expected-baseline-declaration-duplicate" &&
+          check === `baseline-defect-${field}-unique`,
+      ),
+    );
+    assert(!findings.some(({ classification }) => classification === "expected-baseline-defect"));
+  }
+  assert(!isInformationalFinding("expected-baseline-declaration-duplicate"));
+});
+
+verify(
+  "compact signed-zero control keeps the numeric trace and requires unchanged no-memo output",
+  () => {
+    const original = buildCase({ kind: "control", name: "special-primitives", seed: 1 });
+    const compact = buildCase({ kind: "control", name: "special-primitives-compact", seed: 1 });
+    assert.deepEqual(compact.updates, original.updates);
+    assert.deepEqual(compact.hooks, []);
+    assert.deepEqual(compact.effects, []);
+    for (const input of compact.updates)
+      assert.deepEqual(compact.expected(input), original.expected(input));
+    assert(
+      compact.source.indexOf("const a = [props.inputA]") <
+        compact.source.indexOf("const b = {value: props.inputB}"),
+    );
+    const variants = {
+      source: emptyVariant(),
+      disabled: emptyVariant(),
+      enabled: emptyVariant(),
+      noMemoDisabled: { ...emptyVariant(), code: "same" },
+      noMemoEnabled: { ...emptyVariant(), code: "same" },
+    };
+    const taskId = "control/special-primitives-compact";
+    assert(
+      !assessVariants(variants, {}, taskId).some(
+        ({ classification }) => classification === "no-motion-control-failure",
+      ),
+    );
+    assert(
+      assessVariants(
+        { ...variants, noMemoEnabled: { ...emptyVariant(), code: "changed" } },
+        {},
+        taskId,
+      ).some(({ classification }) => classification === "no-motion-control-failure"),
+    );
+  },
+);
 
 console.log(
   JSON.stringify({ selfChecks: assertions, status: "passed", noNativeBindingUsed: true }),

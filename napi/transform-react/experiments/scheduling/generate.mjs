@@ -412,7 +412,6 @@ function control(name, seed) {
           ? ["get:left"]
           : [`${calls ? "call" : "get"}:left`, `${calls ? "call" : "get"}:right`],
         accessEventPolicy: !calls && !throwing ? "pure-accessor-reads" : undefined,
-        eventsPerAttempt: true,
         errorBoundary: throwing,
         fields: [],
         distinct: [],
@@ -663,6 +662,55 @@ function control(name, seed) {
             path: "$.children.0",
             actual: JSON.stringify({
               a: [0],
+              b: { value: { $type: "undefined" } },
+              holes: [{ $type: "hole" }, { $type: "negative-zero" }],
+            }),
+            expected: JSON.stringify({
+              a: [0],
+              b: { value: { $type: "undefined" } },
+              holes: [{ $type: "hole" }, 0],
+            }),
+          },
+        ],
+      };
+    case "special-primitives-compact":
+      return {
+        ...control("special-primitives", seed),
+        source: source(
+          "const a = [props.inputA];\nconst b = {value: props.inputB};\nconst holes = [, props.inputA];",
+          "{a, b, holes}",
+          "props",
+        ),
+        hooks: [],
+        effects: [],
+        cache: { SchedulingProbe: "required" },
+        expectedBaselineDefects: [
+          ...[
+            ["returned-values", "positive-zero"],
+            ["retained-output:positive-zero", "NaN"],
+            ["retained-output:positive-zero", "NaN-stable"],
+            ["retained-output:positive-zero", "undefined"],
+          ].flatMap(([check, step]) =>
+            ["$.a.0", "$.holes.1"].map((path) => ({
+              id: `compact-signed-zero:${check}:${step}:${path}`,
+              caseId: "control/special-primitives-compact",
+              kind: "semantic",
+              check,
+              step,
+              path,
+              actual: { $type: "negative-zero" },
+              expected: 0,
+            })),
+          ),
+          {
+            id: "compact-signed-zero:rendered-positive-zero",
+            caseId: "control/special-primitives-compact",
+            kind: "semantic",
+            check: "rendered-host-tree",
+            step: "positive-zero",
+            path: "$.children.0",
+            actual: JSON.stringify({
+              a: [{ $type: "negative-zero" }],
               b: { value: { $type: "undefined" } },
               holes: [{ $type: "hole" }, { $type: "negative-zero" }],
             }),
@@ -1028,6 +1076,7 @@ export const CONTROL_NAMES = [
   "shared-inner",
   "intermediate-equality",
   "special-primitives",
+  "special-primitives-compact",
   "dependent-effect",
   "effect-before-write",
   "loop",
