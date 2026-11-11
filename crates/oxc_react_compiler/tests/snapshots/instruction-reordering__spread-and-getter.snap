@@ -1,0 +1,46 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/spread-and-getter.js
+---
+import { c as _c } from "react/compiler-runtime";
+// @enableInstructionReordering:true
+import { useState } from "react";
+function Component(t0) {
+	const $ = _c(8);
+	const { source } = t0;
+	let t1;
+	if ($[0] !== source || $[0] === 0 && 1 / $[0] !== 1 / source) {
+		t1 = { ...source };
+		$[0] = source;
+		$[1] = t1;
+	} else {
+		t1 = $[1];
+	}
+	const object = t1;
+	let t2;
+	if ($[2] !== source.items || $[2] === 0 && 1 / $[2] !== 1 / source.items) {
+		t2 = [...source.items];
+		$[2] = source.items;
+		$[3] = t2;
+	} else {
+		t2 = $[3];
+	}
+	const array = t2;
+	const value = source.value;
+	useState(0);
+	let t3;
+	if ($[4] !== array || $[4] === 0 && 1 / $[4] !== 1 / array || $[5] !== object || $[5] === 0 && 1 / $[5] !== 1 / object || $[6] !== value || $[6] === 0 && 1 / $[6] !== 1 / value) {
+		t3 = {
+			object,
+			array,
+			value
+		};
+		$[4] = array;
+		$[5] = object;
+		$[6] = value;
+		$[7] = t3;
+	} else {
+		t3 = $[7];
+	}
+	return t3;
+}

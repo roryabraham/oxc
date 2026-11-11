@@ -777,12 +777,10 @@ fn ox_codegen_reactive_scope<'a>(
             dep_value =
                 oxc_ast::ast::Expression::new_identifier(SPAN, ox_str(&cx.ast, &name), &cx.ast);
         }
-        let comparison = oxc_ast::ast::Expression::new_binary_expression(
-            SPAN,
+        let comparison = ox_codegen_dependency_changed(
+            cx,
             ox_cache_index(&cx.ast, &cache_name, index),
-            oxc::BinaryOperator::StrictInequality,
             dep_expr,
-            &cx.ast,
         );
         change_exprs.push(comparison);
 
@@ -944,6 +942,74 @@ fn ox_codegen_reactive_scope<'a>(
     }
 
     Ok(())
+}
+
+/// Compare cache keys, distinguishing signed zero when instruction scheduling can recover caches.
+fn ox_codegen_dependency_changed<'a>(
+    cx: &OxcContext<'a, '_>,
+    cached: oxc::Expression<'a>,
+    dependency: oxc::Expression<'a>,
+) -> oxc::Expression<'a> {
+    if !cx.env.config.enable_instruction_reordering {
+        return oxc_ast::ast::Expression::new_binary_expression(
+            SPAN,
+            cached,
+            oxc::BinaryOperator::StrictInequality,
+            dependency,
+            &cx.ast,
+        );
+    }
+
+    // Unlike the TS implementation, opt-in caches distinguish +0 from -0. Strict equality alone
+    // would reuse a stale value when scheduling makes an uncached construction cacheable. All
+    // opt-in scopes use the same comparison so compact and interleaved inputs agree, even when
+    // the compact input needs no instruction movement.
+    // The reciprocal comparison runs only after strict equality succeeds and the cached value
+    // is numeric zero, so it cannot coerce objects, BigInts or the initial Symbol sentinel.
+    // Inline checks avoid introducing a reference to a possibly shadowed Object.is/globalThis.
+    let zero = oxc_ast::ast::Expression::new_binary_expression(
+        SPAN,
+        cached.clone_in(cx.ast.allocator()),
+        oxc::BinaryOperator::StrictEquality,
+        ox_number(&cx.ast, 0.0, SPAN),
+        &cx.ast,
+    );
+    let reciprocal = |value| {
+        oxc_ast::ast::Expression::new_binary_expression(
+            SPAN,
+            ox_number(&cx.ast, 1.0, SPAN),
+            oxc::BinaryOperator::Division,
+            value,
+            &cx.ast,
+        )
+    };
+    let different_sign = oxc_ast::ast::Expression::new_binary_expression(
+        SPAN,
+        reciprocal(cached.clone_in(cx.ast.allocator())),
+        oxc::BinaryOperator::StrictInequality,
+        reciprocal(dependency.clone_in(cx.ast.allocator())),
+        &cx.ast,
+    );
+    let strict_difference = oxc_ast::ast::Expression::new_binary_expression(
+        SPAN,
+        cached,
+        oxc::BinaryOperator::StrictInequality,
+        dependency,
+        &cx.ast,
+    );
+    oxc_ast::ast::Expression::new_logical_expression(
+        SPAN,
+        strict_difference,
+        oxc::LogicalOperator::Or,
+        oxc_ast::ast::Expression::new_logical_expression(
+            SPAN,
+            zero,
+            oxc::LogicalOperator::And,
+            different_sign,
+            &cx.ast,
+        ),
+        &cx.ast,
+    )
 }
 
 /// Build `$[index]` as a `MemberExpression` for use as an assignment target.

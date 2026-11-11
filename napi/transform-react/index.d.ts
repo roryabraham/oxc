@@ -193,6 +193,20 @@ export interface ReactCompilerEnvironmentOptions {
   enableTransitivelyFreezeFunctionExpressions?: boolean
   enableFunctionOutlining?: boolean
   enableJsxOutlining?: boolean
+  /**
+   * Experimental Oxc fork extension: sink inert instructions within basic blocks
+   * before inferring memoization scopes. Calls and property accesses keep their order.
+   *
+   * @default false
+   */
+  enableInstructionReordering?: boolean
+  /**
+   * Test-only Oxc fork control: run the compiler pipeline without generating caches.
+   * Used to compare instruction schedules independently of memoization.
+   *
+   * @default false
+   */
+  disableMemoizationForTesting?: boolean
   assertValidMutableRanges?: boolean
   enableCustomTypeDefinitionForReanimated?: boolean
   enableTreatRefLikeIdentifiersAsRefs?: boolean

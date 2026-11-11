@@ -791,8 +791,11 @@ impl<'a> Environment<'a> {
 
     /// Whether memoization is enabled for this compilation.
     /// Ported from TS `get enableMemoization()` in Environment.ts.
-    /// Returns true for client/lint modes, false for SSR.
+    /// Returns true for client/lint modes, except in the no-memoization test control.
     pub fn enable_memoization(&self) -> bool {
+        if self.config.disable_memoization_for_testing {
+            return false;
+        }
         match self.output_mode {
             OutputMode::Client | OutputMode::Lint => true,
             OutputMode::Ssr => false,

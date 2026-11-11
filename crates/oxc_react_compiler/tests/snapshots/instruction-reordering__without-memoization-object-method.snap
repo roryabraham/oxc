@@ -1,0 +1,11 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/without-memoization-object-method.js
+---
+// @enableInstructionReordering:true @disableMemoizationForTesting:true
+function Component() {
+	const object = { method() {
+		return 1;
+	} };
+	return object.method();
+}

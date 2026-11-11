@@ -1,0 +1,49 @@
+## Code
+
+import { c as _c } from "react/compiler-runtime";
+import { useState } from "react";
+import { jsx as _jsx } from "react/jsx-runtime";
+export function Component(t0) {
+	const $ = _c(7);
+	const { x, y } = t0;
+	useState(0);
+	let a;
+	if ($[0] !== x || $[0] === 0 && 1 / $[0] !== 1 / x) {
+		a = [];
+		a.push(x);
+		$[0] = x;
+		$[1] = a;
+	} else {
+		a = $[1];
+	}
+	let b;
+	if ($[2] !== y || $[2] === 0 && 1 / $[2] !== 1 / y) {
+		b = [];
+		b.push(y);
+		$[2] = y;
+		$[3] = b;
+	} else {
+		b = $[3];
+	}
+	let t1;
+	if ($[4] !== a || $[4] === 0 && 1 / $[4] !== 1 / a || $[5] !== b || $[5] === 0 && 1 / $[5] !== 1 / b) {
+		t1 = /* @__PURE__ */ _jsx("div", {
+			a,
+			b
+		});
+		$[4] = a;
+		$[5] = b;
+		$[6] = t1;
+	} else {
+		t1 = $[6];
+	}
+	return t1;
+}
+
+## Errors
+
+(none)
+
+## Fatal
+
+false

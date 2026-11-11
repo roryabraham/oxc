@@ -1,0 +1,30 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/operand-evaluation-getters.js
+---
+import { c as _c } from "react/compiler-runtime";
+// @enableInstructionReordering:true
+function Component(t0) {
+	const $ = _c(4);
+	const { left, right } = t0;
+	let t1;
+	if ($[0] !== left.value || $[0] === 0 && 1 / $[0] !== 1 / left.value) {
+		t1 = [left.value];
+		$[0] = left.value;
+		$[1] = t1;
+	} else {
+		t1 = $[1];
+	}
+	const a = t1;
+	let t2;
+	if ($[2] !== right.value || $[2] === 0 && 1 / $[2] !== 1 / right.value) {
+		t2 = [right.value];
+		$[2] = right.value;
+		$[3] = t2;
+	} else {
+		t2 = $[3];
+	}
+	const b = t2;
+	const n = b[0];
+	return a[0] + n;
+}

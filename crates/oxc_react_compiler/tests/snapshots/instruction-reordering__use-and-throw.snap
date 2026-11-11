@@ -1,0 +1,26 @@
+---
+source: crates/oxc_react_compiler/tests/snapshot.rs
+input_file: crates/oxc_react_compiler/fixtures/instruction-reordering/use-and-throw.js
+---
+import { c as _c } from "react/compiler-runtime";
+// @enableInstructionReordering:true
+import { use } from "react";
+function Component(t0) {
+	const $ = _c(3);
+	const { promise, fail } = t0;
+	const value = use(promise);
+	let items;
+	if ($[0] !== fail || $[0] === 0 && 1 / $[0] !== 1 / fail || $[1] !== value || $[1] === 0 && 1 / $[1] !== 1 / value) {
+		items = [];
+		if (fail) {
+			throw new Error("failed");
+		}
+		items.push(value);
+		$[0] = fail;
+		$[1] = value;
+		$[2] = items;
+	} else {
+		items = $[2];
+	}
+	return items;
+}

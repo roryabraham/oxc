@@ -48,6 +48,7 @@ use crate::react_compiler_optimization::outline_functions;
 use crate::react_compiler_optimization::outline_jsx;
 use crate::react_compiler_optimization::prune_maybe_throws;
 use crate::react_compiler_optimization::prune_unused_labels_hir;
+use crate::react_compiler_optimization::reorder_instructions;
 use crate::react_compiler_reactive_scopes::assert_scope_instructions_within_scopes;
 use crate::react_compiler_reactive_scopes::assert_well_formed_break_targets;
 use crate::react_compiler_reactive_scopes::build_reactive_function;
@@ -140,7 +141,9 @@ pub fn compile_fn<'a, const EMIT: bool>(
     let void_memo_errors = validate_use_memo(&hir, &mut env);
     log_errors_as_events(&void_memo_errors, context);
 
-    drop_manual_memoization(&mut hir, &mut env)?;
+    if !env.config.disable_memoization_for_testing {
+        drop_manual_memoization(&mut hir, &mut env)?;
+    }
 
     inline_immediately_invoked_function_expressions(&mut hir, &mut env)?;
 
@@ -170,6 +173,10 @@ pub fn compile_fn<'a, const EMIT: bool>(
     }
 
     optimize_props_method_calls(&mut hir, &env);
+
+    if env.config.enable_instruction_reordering && env.output_mode == OutputMode::Client {
+        reorder_instructions(&mut hir, &env);
+    }
 
     // Async function components are Server Components: they render once per
     // request and never re-render, so `Date.now()` / `Math.random()` are not a
@@ -296,7 +303,9 @@ pub fn compile_fn<'a, const EMIT: bool>(
 
     align_method_call_scopes(&mut hir, &mut env);
 
-    align_object_method_scopes(&mut hir, &mut env);
+    if !env.config.disable_memoization_for_testing {
+        align_object_method_scopes(&mut hir, &mut env);
+    }
 
     prune_unused_labels_hir(&mut hir);
 
